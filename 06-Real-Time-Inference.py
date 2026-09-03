@@ -272,13 +272,47 @@ except Exception as e:
 
 # COMMAND ----------
 
+# DBTITLE 1,Serve from Offline Feature Store
+# MAGIC %md
+# MAGIC ## D. Serve Using the Offline Feature Store
+# MAGIC
+# MAGIC When **no online (synced) feature table exists**, the endpoint can't look up features by
+# MAGIC `customer_id` on its own. You can still serve real-time predictions by **reading the features
+# MAGIC from the offline feature table at request time** and passing them directly to the endpoint.
+# MAGIC
+# MAGIC This is the offline-feature-store serving pattern — no online store required. The offline
+# MAGIC table (`customer_churn_features`) is the same one the model was logged against in Notebook 04,
+# MAGIC so the feature values match training exactly.
+
+# COMMAND ----------
+
+# DBTITLE 1,Query with Offline Features
+# Look up the target customers' features straight from the OFFLINE feature table,
+# then pass them directly to the endpoint (works with or without an online store).
+target_ids = ["CUST-0000214", "CUST-0000001", "CUST-0000002"]
+
+offline_features = (
+    spark.table(DA.feature_table_name)
+         .filter(F.col("customer_id").isin(target_ids))
+         .select("customer_id", *DA.feature_columns)
+         .toPandas()
+)
+print(f"Fetched {len(offline_features)} rows from offline feature table: {DA.feature_table_name}")
+
+offline_payload = {"dataframe_records": offline_features.to_dict("records")}
+response = client.predict(endpoint=endpoint_name, inputs=offline_payload)
+print(json.dumps(response, indent=2))
+
+# COMMAND ----------
+
 # DBTITLE 1,Conclusion
 # MAGIC %md
-# MAGIC ## D. Conclusion
+# MAGIC ## E. Conclusion
 # MAGIC
 # MAGIC In this notebook, we:
 # MAGIC - Created a **Model Serving endpoint** from a Unity Catalog registered model
 # MAGIC - Queried the endpoint **programmatically** from a notebook
+# MAGIC - Served predictions from the **offline feature store** when no online store is available
 # MAGIC - Demonstrated how to use the **Serving UI** for testing and monitoring
 # MAGIC
 # MAGIC Key takeaways:
