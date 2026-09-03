@@ -397,33 +397,30 @@ from databricks.sdk.service.catalog import MonitorInferenceLog, MonitorInference
 
 w = WorkspaceClient()
 
-if not spark.catalog.tableExists(unpacked_table):
-    print(f"{unpacked_table} does not exist yet — run D1 (needs endpoint traffic) first.")
-else:
-    try:
-        w.quality_monitors.get(unpacked_table)
-        print(f"Monitor already exists on {unpacked_table}.")
-    except Exception:
-        print(f"Creating InferenceLog monitor on {unpacked_table} ...")
-        w.quality_monitors.create(
-            table_name=unpacked_table,
-            inference_log=MonitorInferenceLog(
-                problem_type=MonitorInferenceLogProblemType.PROBLEM_TYPE_CLASSIFICATION,
-                prediction_col="prediction",
-                timestamp_col="inference_timestamp",
-                granularities=["1 day"],
-                model_id_col="model_version",
-                # label_col="actual_churned",   # add once ground-truth labels are joined in
-            ),
-            assets_dir=f"/Workspace{DA.workshop_dir}/monitoring",
-            output_schema_name=f"{DA.catalog_name}.{DA.schema_name}",
-            baseline_table_name=DA.feature_table_name,  # training features = drift baseline
-            slicing_exprs=["tier_rank", "has_maturing_cd"],
-        )
-        print("Monitor created. It generates:")
-        print(f"  • {unpacked_table}_profile_metrics")
-        print(f"  • {unpacked_table}_drift_metrics   (the table your retrain gate reads)")
-        print("  • a monitoring dashboard (see the table's Quality tab)")
+try:
+    w.quality_monitors.get(unpacked_table)
+    print(f"Monitor already exists on {unpacked_table}.")
+except Exception:
+    print(f"Creating InferenceLog monitor on {unpacked_table} ...")
+    w.quality_monitors.create(
+        table_name=unpacked_table,
+        inference_log=MonitorInferenceLog(
+            problem_type=MonitorInferenceLogProblemType.PROBLEM_TYPE_CLASSIFICATION,
+            prediction_col="prediction",
+            timestamp_col="inference_timestamp",
+            granularities=["1 day"],
+            model_id_col="model_version",
+            # label_col="actual_churned",   # add once ground-truth labels are joined in
+        ),
+        assets_dir=f"/Workspace{DA.workshop_dir}/monitoring",
+        output_schema_name=f"{DA.catalog_name}.{DA.schema_name}",
+        baseline_table_name=DA.feature_table_name,  # training features = drift baseline
+        slicing_exprs=["tier_rank", "has_maturing_cd"],
+    )
+    print("Monitor created. It generates:")
+    print(f"  • {unpacked_table}_profile_metrics")
+    print(f"  • {unpacked_table}_drift_metrics   (the table your retrain gate reads)")
+    print("  • a monitoring dashboard (see the table's Quality tab)")
 
 # COMMAND ----------
 
