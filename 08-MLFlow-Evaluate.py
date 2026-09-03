@@ -17,7 +17,7 @@
 # ///
 # DBTITLE 1,Title
 # MAGIC %md
-# MAGIC # 08-MLFlow-Evaluate
+# MAGIC # `08-MLFlow-Evaluate`
 # MAGIC
 # MAGIC This notebook is the **Evaluation** task of the MLflow Deployment Job. It is triggered automatically when a new model version is registered.
 # MAGIC
@@ -54,7 +54,7 @@ uc_client = MlflowClient(registry_uri="databricks-uc")
 mv = uc_client.get_model_version(name=model_name, version=model_version)
 run_id = mv.run_id
 
-artifact_path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="bank_churn_model")
+artifact_path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="customer_churn_model")
 
 sk_model = None
 for root, dirs, files in os.walk(artifact_path):

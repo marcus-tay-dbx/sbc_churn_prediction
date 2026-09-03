@@ -8,10 +8,16 @@
 # ]
 # [tool.databricks.environment]
 # environment_version = "5"
+# dependencies = [
+#   "databricks-feature-engineering",
+#   "xgboost",
+#   "shap",
+#   "seaborn",
+# ]
 # ///
 # DBTITLE 1,Title
 # MAGIC %md
-# MAGIC # 08-MLFlow-Approve
+# MAGIC # `08-MLFlow-Approve`
 # MAGIC
 # MAGIC This notebook is the **Approval** task of the MLflow Deployment Job. It gates deployment using an **automatic threshold-based** check.
 # MAGIC

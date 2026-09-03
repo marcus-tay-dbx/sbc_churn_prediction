@@ -73,7 +73,6 @@
 # MAGIC
 # MAGIC </div>
 # MAGIC
-# MAGIC
 
 # COMMAND ----------
 
@@ -156,7 +155,6 @@ for feat, val in churn_corr.items():
 
 # DBTITLE 1,Outlier Detection (IQR)
 # Use `c` as the loop variable (not `col`) to avoid shadowing the imported
-# pyspark `col` function from 00-Setup.
 feature_cols_eda = [c for c in numeric_cols if c not in ['churned', 'tier_rank', 'has_maturing_cd']]
 
 outlier_summary = []
@@ -308,4 +306,4 @@ print("  - Long tenure alone does not protect: the most valuable, longest-tenure
 # MAGIC
 # MAGIC Genie Code accelerates EDA by generating production-quality analysis code from natural language prompts, while keeping you in full control of the workflow.
 # MAGIC
-# MAGIC Next: Proceed to **03-Feature-Engineering** to prepare features for model training.
+# MAGIC Next: Proceed to `03-Feature-Engineering` to prepare features for model training.
