@@ -8,6 +8,12 @@
 # ]
 # [tool.databricks.environment]
 # environment_version = "5"
+# dependencies = [
+#   "databricks-feature-engineering",
+#   "xgboost",
+#   "shap",
+#   "seaborn",
+# ]
 # ///
 # DBTITLE 1,Title
 # MAGIC %md

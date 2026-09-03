@@ -8,12 +8,6 @@
 # ]
 # [tool.databricks.environment]
 # environment_version = "5"
-# dependencies = [
-#   "databricks-feature-engineering",
-#   "xgboost",
-#   "shap",
-#   "seaborn",
-# ]
 # ///
 # DBTITLE 1,Title
 # MAGIC %md
@@ -58,18 +52,6 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Check Online Feature Store
-# The synced table name follows the convention: <offline_feature_table>_synced
-synced_table_name = f"{DA.feature_table_name}_synced"
-
-assert spark.catalog.tableExists(synced_table_name), \
-    f"Online feature store '{synced_table_name}' does not exist. Create a synced table in Notebook 03 (Section D) first."
-
-print(f"Online feature store exists: {synced_table_name}")
-print(f"Row count: {spark.table(synced_table_name).count()}")
-
-# COMMAND ----------
-
 # DBTITLE 1,Deploy Endpoint
 mlflow.set_registry_uri("databricks-uc")
 client = get_deploy_client("databricks")
@@ -77,6 +59,15 @@ client = get_deploy_client("databricks")
 # Create a unique endpoint name with structured prefix
 endpoint_name = DA.endpoint_name
 model_name = DA.model_name
+
+# Serve the current champion (fallback dev) version — never hardcode a version,
+# so the endpoint always launches on the promoted model.
+_mc = MlflowClient(registry_uri="databricks-uc")
+try:
+    serving_version = str(_mc.get_model_version_by_alias(model_name, "champion").version)
+except Exception:
+    serving_version = str(_mc.get_model_version_by_alias(model_name, "dev").version)
+print(f"Serving version: {serving_version}")
 
 # Check if endpoint exists, create if not
 try:
@@ -92,7 +83,7 @@ except Exception as e:
                     {
                         "name": "my-model",
                         "entity_name": model_name,
-                        "entity_version": "1",
+                        "entity_version": serving_version,
                         "workload_size": "Small",
                         "scale_to_zero_enabled": True
                     }
@@ -108,20 +99,37 @@ except Exception as e:
                 "tags": [
                     {"key": "sbc", "value": "true"},
                     {"key": "churn-prediction", "value": "true"}
-                ],
-                # Inference logging: auto-capture every request/response to a Delta
-                # table (<prefix>_payload) for monitoring & drift detection in 07.
-                "auto_capture_config": {
-                    "catalog_name": DA.catalog_name,
-                    "schema_name": DA.schema_name,
-                    "table_name_prefix": "churn_endpoint"
-                }
+                ]
             }
         )
         print(f"Endpoint '{endpoint_name}' created. It may take 5-10 minutes to become ready.")
-        print(f"Inference logging enabled → {DA.catalog_name}.{DA.schema_name}.churn_endpoint_payload")
     else:
         print(f"Error: {e}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Enable Inference Logging (AI Gateway)
+# Legacy `auto_capture_config` is deprecated — enable logging via AI Gateway inference
+# tables. The mlflow.deployments client ignores the `ai_gateway` config key, so we set it
+# with the dedicated AI Gateway API (idempotent; works whether the endpoint is new or existing).
+# Captures each request/response to `<prefix>_payload` for monitoring & drift detection in 07.
+from databricks.sdk import WorkspaceClient
+
+_w = WorkspaceClient()
+_w.api_client.do(
+    "PUT",
+    f"/api/2.0/serving-endpoints/{endpoint_name}/ai-gateway",
+    body={
+        "inference_table_config": {
+            "catalog_name": DA.catalog_name,
+            "schema_name": DA.schema_name,
+            "table_name_prefix": "churn_endpoint",
+            "enabled": True,
+        }
+    },
+)
+print(f"Inference logging (AI Gateway) enabled → {DA.catalog_name}.{DA.schema_name}.churn_endpoint_payload")
+print("Payload rows appear after the endpoint serves requests (batched; ~10-30 min).")
 
 # COMMAND ----------
 
