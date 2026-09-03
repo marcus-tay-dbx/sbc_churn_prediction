@@ -31,6 +31,26 @@ dbutils.widgets.text("schema_name", "sbc_churn_prediction", "Schema Name")
 catalog_name = dbutils.widgets.get("catalog_name")
 schema_name = dbutils.widgets.get("schema_name")
 
+# Create catalog if the user has permission; if not, verify it was pre-created by an admin
+try:
+    spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog_name}")
+except Exception as e:
+    err = str(e)
+    if "PERMISSION_DENIED" in err or "UNAUTHORIZED" in err:
+        existing = [r.catalog for r in spark.sql("SHOW CATALOGS").collect()]
+        if catalog_name in existing:
+            print(f"ℹ No CREATE CATALOG permission, but '{catalog_name}' already exists — proceeding")
+        else:
+            raise RuntimeError(
+                f"Cannot create catalog '{catalog_name}' and it does not exist.\n"
+                f"Ask a metastore admin to run:\n"
+                f"  CREATE CATALOG IF NOT EXISTS {catalog_name};\n"
+                f"  GRANT USE CATALOG, CREATE SCHEMA ON CATALOG {catalog_name} TO `{username}`;\n"
+                f"Or override the 'catalog_name' widget to an existing catalog."
+            ) from e
+    else:
+        raise
+
 spark.sql(f"USE CATALOG {catalog_name}")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
 spark.sql(f"USE SCHEMA {schema_name}")
