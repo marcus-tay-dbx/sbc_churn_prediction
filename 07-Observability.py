@@ -343,7 +343,9 @@ else:
             .withColumn("_preds", F.col("_resp.predictions"))
             # zip each request record with its prediction, then explode to one row each
             .withColumn("_pair", F.explode(F.arrays_zip("_recs", "_preds")))
-            .withColumn("inference_timestamp", (F.col("timestamp_ms") / 1000).cast("timestamp"))
+            # AI Gateway inference tables carry a `request_time` timestamp column directly
+            # (the legacy auto_capture_config used epoch `timestamp_ms` instead).
+            .withColumn("inference_timestamp", F.col("request_time"))
             .withColumn("model_version", F.lit("served"))  # set from request_metadata if captured
             .select(
                 F.col("databricks_request_id").alias("request_id"),
