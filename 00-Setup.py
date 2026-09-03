@@ -698,4 +698,48 @@ print(f"Base table:     {DA.base_table_name}")
 print(f"Feature table:  {DA.feature_table_name}")
 print(f"Model:          {DA.model_name}")
 print(f"Endpoint:       {DA.endpoint_name}")
+
+# COMMAND ----------
+
+# DBTITLE 1,07-Observability — Load Dev Model & Held-out Split
+# 00-Setup runs INLINE via `%run`, so `notebook_path` (set near the top) resolves to the
+# CALLING notebook. We only do the heavier dev-model download + held-out split when 00 is
+# run from 07-Observability; every other notebook that `%run`s 00-Setup skips this entirely.
+if notebook_path.endswith("07-Observability"):
+    mlflow.set_registry_uri("databricks-uc")
+    client = MlflowClient()
+    model_name = DA.model_name
+    model_uri = DA.model_uri
+    sk_model = None
+    try:
+        model_version = client.get_model_version_by_alias(model_name, "dev")
+        run_id = model_version.run_id
+        artifact_path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="bank_churn_model")
+        for _root, _dirs, _files in os.walk(artifact_path):
+            for _f in _files:
+                if _f.endswith(".pkl"):
+                    with open(os.path.join(_root, _f), "rb") as _fh:
+                        sk_model = pickle.load(_fh)
+                    break
+            if sk_model is not None:
+                break
+
+        # Held-out split from the offline feature table (same split settings as 04-Model-Training).
+        _feat_pdf = spark.table("customer_churn_features").toPandas()
+        feature_cols = DA.feature_columns
+        X = _feat_pdf[feature_cols]
+        y = _feat_pdf["churned"]
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+
+        # Print the loaded model only if the artifact was actually found.
+        if sk_model is not None:
+            print(f"Loaded model: {model_name} (version {model_version.version})")
+            print(f"Model type:   {type(sk_model).__name__}")
+        else:
+            print("⚠️  Model artifact (.pkl) not found — SHAP/explainability (Section B) will be skipped.")
+        print(f"Held-out test set: {X_test.shape[0]} samples × {X_test.shape[1]} features")
+    except Exception as e:
+        print(f"⚠️  Dev model/data not loaded (run 04-Model-Training first): {e}")
 print("Setup complete!")

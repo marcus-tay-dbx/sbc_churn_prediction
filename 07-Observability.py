@@ -48,39 +48,16 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Load Model and Data
-# Imports come from 00-Setup, which is re-run above after dbutils.library.restartPython().
-mlflow.set_registry_uri("databricks-uc")
-client = MlflowClient()
-
-model_name = DA.model_name
-model_uri = DA.model_uri
-
-model_version = client.get_model_version_by_alias(model_name, "dev")
-run_id = model_version.run_id
-artifact_path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="bank_churn_model")
-
-sk_model = None
-for root, dirs, files in os.walk(artifact_path):
-    for f in files:
-        if f.endswith(".pkl"):
-            with open(os.path.join(root, f), "rb") as fh:
-                sk_model = pickle.load(fh)
-            break
-    if sk_model is not None:
-        break
-
-print(f"Loaded model: {model_name} (version {model_version.version})")
-print(f"Model type: {type(sk_model).__name__}")
-
-df = spark.table("customer_churn_features").toPandas()
-
-feature_cols = DA.feature_columns
-X = df[feature_cols]
-y = df["churned"]
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
-
-print(f"Test set: {X_test.shape[0]} samples, {X_test.shape[1]} features")
+# DBTITLE 1,Model & Data (loaded by 00-Setup)
+# The dev model (`sk_model`), held-out split (`X_test`/`y_test`), `feature_cols`, and
+# `model_name` are loaded by 00-Setup above — but only when 00 is run from THIS notebook
+# (see 00-Setup's final cell). This keeps the model/data-loading logic centralized in 00.
+assert "sk_model" in globals() and sk_model is not None, (
+    "Dev model not loaded. Run 04-Model-Training first, then re-run this notebook — "
+    "00-Setup loads the model + held-out split only when it is run from 07-Observability."
+)
+print(f"Ready for observability: {model_name}")
+print(f"Held-out test set: {X_test.shape[0]} samples × {X_test.shape[1]} features")
 
 # COMMAND ----------
 
