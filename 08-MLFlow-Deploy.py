@@ -17,7 +17,7 @@
 # ///
 # DBTITLE 1,Title
 # MAGIC %md
-# MAGIC # 08-MLFlow-Deploy
+# MAGIC # `08-MLFlow-Deploy`
 # MAGIC
 # MAGIC This notebook is the **Deployment** task of the MLflow Deployment Job. After the model version passes evaluation and approval, this task promotes it.
 # MAGIC
@@ -69,7 +69,7 @@ from databricks.sdk.service.serving import ServedEntityInput
 
 w = WorkspaceClient()
 username = spark.sql("SELECT current_user()").collect()[0][0]
-endpoint_name = "sbc-bank-churn-" + re.sub(r'[^a-zA-Z0-9-]', '-', username)
+endpoint_name = "customer_churn_endpoint"
 
 try:
     w.serving_endpoints.get(endpoint_name)

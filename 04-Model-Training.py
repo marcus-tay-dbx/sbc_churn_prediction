@@ -22,9 +22,9 @@
 # MAGIC In this notebook, we train **two** models on the churn feature table — a **Random Forest** and an **XGBoost** classifier — track both as separate **MLflow** runs, and register the **best model by PR-AUC** in **Unity Catalog**.
 # MAGIC
 # MAGIC **Evaluation metrics** (for an imbalanced ~8-12% churn target):
-# MAGIC - **`pr_auc`** — precision-recall AUC, the primary metric for a rare positive class
-# MAGIC - **`recall_pos`** / **`precision_pos`** — churn-class recall & precision
-# MAGIC - **`test_f1`** — macro-F1, kept as the tracked number the deployment gate reads
+# MAGIC - `pr_auc` — precision-recall AUC, the primary metric for a rare positive class
+# MAGIC - `recall_pos` / `precision_pos` — churn-class recall & precision
+# MAGIC - `test_f1` — macro-F1, kept as the tracked number the deployment gate reads
 # MAGIC
 # MAGIC **Prerequisites**: Run `00-Setup` and `03-Feature-Engineering` first.
 
@@ -102,10 +102,10 @@ print(f"Churn rate:   {y.mean():.1%}")
 # MAGIC
 # MAGIC | Metric | What it measures |
 # MAGIC | --- | --- |
-# MAGIC | **`pr_auc`** | Precision-recall AUC — primary, threshold-free summary for a rare class |
-# MAGIC | **`recall_pos`** | Of customers who actually churn, how many we flag |
-# MAGIC | **`precision_pos`** | Of customers we flag, how many really churn |
-# MAGIC | **`test_f1`** | Macro-F1 — kept as the tracked number the deployment gate (08) reads |
+# MAGIC | `pr_auc` | Precision-recall AUC — primary, threshold-free summary for a rare class |
+# MAGIC | `recall_pos` | Of customers who actually churn, how many we flag |
+# MAGIC | `precision_pos` | Of customers we flag, how many really churn |
+# MAGIC | `test_f1` | Macro-F1 — kept as the tracked number the deployment gate (08) reads |
 # MAGIC
 # MAGIC Each model is logged as its **own MLflow run** (`RandomForest`, `XGBoost`) so you can compare them side by side in the Experiment UI.
 
@@ -153,7 +153,7 @@ def train_and_log(model, model_type, params, run_name):
 
         info = fe.log_model(
             model=model,
-            artifact_path="bank_churn_model",
+            artifact_path="customer_churn_model",
             flavor=mlflow.sklearn,
             training_set=training_set,
         )
@@ -272,7 +272,7 @@ print(f"Tagged model {registered_model.name} with best_model={best['model_type']
 # MAGIC In this notebook, we:
 # MAGIC - Loaded the **feature table** from the Feature Store
 # MAGIC - Trained **Random Forest** and **XGBoost** using **`FeatureLookup`** for consistent train/inference features
-# MAGIC - Logged each as its own **MLflow run** with churn-focused metrics (**`pr_auc`**, **`recall_pos`**, **`precision_pos`**, **`test_f1`**)
+# MAGIC - Logged each as its own **MLflow run** with churn-focused metrics (`pr_auc`, `recall_pos`, `precision_pos`, `test_f1`)
 # MAGIC - **Registered the best model by PR-AUC** in Unity Catalog with a `dev` alias
 # MAGIC
-# MAGIC The model is now ready for deployment. Next: **05-Batch-Inference** for batch scoring, **06-Real-Time-Inference** for serving endpoints, or **08-MLFlow** to set up a deployment job.
+# MAGIC The model is now ready for deployment. Next: `05-Batch-Inference` for batch scoring, `06-Real-Time-Inference` for serving endpoints, or **Notebook 08 (Continuous Deployment)** to set up the deployment job.

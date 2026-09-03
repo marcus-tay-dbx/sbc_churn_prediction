@@ -16,17 +16,34 @@
 # ]
 # ///
 # DBTITLE 1,Install Dependencies
-# MAGIC
 # MAGIC %pip install databricks-feature-engineering --quiet
 
 # COMMAND ----------
 
-# DBTITLE 1,Shared Imports (used across notebooks 01-08)
+# DBTITLE 1,Step 1: Set Catalog and Schema
+# Derive user initials from email (e.g. "marcus.tay@databricks.com" → "mt")
+username = spark.sql("SELECT current_user()").collect()[0][0]
+name_part = username.split("@")[0]
+initials = "".join(p[0] for p in name_part.replace("-", ".").split(".") if p)
+
+# Shared catalog, per-user schema prefixed by initials
+dbutils.widgets.text("catalog_name", "solution_builder", "Catalog Name")
+dbutils.widgets.text("schema_name", f"{initials}_sbc_churn_prediction", "Schema Name")
+catalog_name = dbutils.widgets.get("catalog_name")
+schema_name = dbutils.widgets.get("schema_name")
+
+spark.sql(f"USE CATALOG {catalog_name}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+spark.sql(f"USE SCHEMA {schema_name}")
+
+print(f"✓ Catalog: {catalog_name}")
+print(f"✓ Schema:  {schema_name}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Step 2: Shared Imports (used across notebooks 01-08)
 # Single import block for the whole workshop. Every notebook runs `%run "./00-Setup"`,
 # so these names are available downstream — no per-notebook import cells needed.
-# All third-party libraries (feature-engineering, xgboost, shap, seaborn) are provided
-# by the serverless environment declared in each notebook's `# /// script` header, so
-# there are no %pip installs anywhere in the workshop.
 import os, re, json, pickle, warnings, logging
 import numpy as np
 import pandas as pd
@@ -51,7 +68,7 @@ from sklearn.metrics import (
     average_precision_score, precision_score, recall_score,
 )
 # xgboost and shap are NOT imported here — they are not pre-installed on serverless
-# compute and are installed/imported locally in 04-Model-Training and 07-Observability.
+# compute and are installed/imported locally in 04-Model-Training and 07-Observability-and-Continuous-Retrain.
 
 from databricks.feature_engineering import FeatureEngineeringClient, FeatureLookup
 from databricks.sdk import WorkspaceClient
@@ -66,17 +83,6 @@ logging.getLogger("tensorflow").setLevel(logging.ERROR)
 notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
 workshop_dir = os.path.dirname(notebook_path)
 course_dir = os.path.dirname(workshop_dir)
-
-username = spark.sql("SELECT current_user()").collect()[0][0]
-# Shared workshop schema — configurable via notebook widgets.
-dbutils.widgets.text("catalog_name", "solution_builder", "Catalog Name")
-dbutils.widgets.text("schema_name", "sbc_churn_prediction", "Schema Name")
-catalog_name = dbutils.widgets.get("catalog_name")
-schema_name = dbutils.widgets.get("schema_name")
-
-spark.sql(f"USE CATALOG {catalog_name}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
-spark.sql(f"USE SCHEMA {schema_name}")
 
 table_name = "customer_churn"
 raw_root = f"/Volumes/{catalog_name}/{schema_name}/raw_data"
@@ -148,9 +154,6 @@ def generate_raw_data(CATALOG, SCHEMA):
     ]
     CROSS_SELL_TARGETS = ["PROD-INV-3001", "PROD-CRD-4001", "PROD-LN-5001"]
 
-    print(f"NOW: {NOW.date()} ({'pinned' if os.environ.get('MERIDIAN_PIN_TIME') == '1' else 'rolling'})")
-    print(f"PROMO_ONSET: {PROMO_ONSET.date()}  SNAPSHOT_DATE: {SNAPSHOT_DATE.date()}")
-    print(f"Hero: {HERO_CUST} at risk on {HERO_CD}; competitor rate {COMPETITOR_RATE:.2%}")
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SCHEMA}")
     spark.sql(f"CREATE VOLUME IF NOT EXISTS {CATALOG}.{SCHEMA}.{RAW_VOL}")
@@ -162,11 +165,8 @@ def generate_raw_data(CATALOG, SCHEMA):
     def _save(df, table):
         path = _raw_path(table)
         df.write.mode("overwrite").parquet(path)
-        n = spark.read.parquet(path).count()
-        print(f"  ✓ {table:26s} rows={n:>10,}  → {path}")
 
     # ── 1. Customers ───────────────────────────────────────────────────────────
-    print("\n[1/6] Generating customers...")
     _METROS = [
         ("New York", "NY", 40.71, -74.01), ("Boston", "MA", 42.36, -71.06),
         ("Chicago", "IL", 41.88, -87.63), ("San Francisco", "CA", 37.77, -122.42),
@@ -247,7 +247,6 @@ def generate_raw_data(CATALOG, SCHEMA):
     ATRISK_CUSTS = AFFECTED_CUSTS + MODERATE_CUSTS
 
     # ── 2. Products ────────────────────────────────────────────────────────────
-    print("\n[2/6] Generating products...")
     products_df = (
         spark.createDataFrame(
             [(p[0], p[1], p[2], p[3], p[4], p[5], p[6]) for p in CATALOG_PRODUCTS],
@@ -259,7 +258,6 @@ def generate_raw_data(CATALOG, SCHEMA):
     _save(products_df, "raw_products")
 
     # ── 3. Holdings ────────────────────────────────────────────────────────────
-    print("\n[3/6] Generating holdings...")
     affected_cust_arr = F.array(*[F.lit(c) for c in AFFECTED_CUSTS])
     moderate_cust_arr = F.array(*[F.lit(c) for c in MODERATE_CUSTS])
     _deposit_prods = [p[0] for p in CATALOG_PRODUCTS if p[3] == "deposit"]
@@ -339,7 +337,6 @@ def generate_raw_data(CATALOG, SCHEMA):
     _save(holdings_all, "raw_holdings")
 
     # ── 4. Transactions ────────────────────────────────────────────────────────
-    print("\n[4/6] Generating transactions...")
     ramp_off = (SNAPSHOT_DATE - RISK_RAMP).days
     affected_txn = (
         spark.createDataFrame([(c,) for c in AFFECTED_CUSTS], "customer_id string")
@@ -387,7 +384,6 @@ def generate_raw_data(CATALOG, SCHEMA):
     _save(txn_df, "raw_transactions")
 
     # ── 5. Risk snapshots ──────────────────────────────────────────────────────
-    print("\n[5/6] Generating risk snapshots...")
     _CHURN_NOTES = [
         "asked about competitor CD rates", "mentioned moving funds at maturity",
         "rate shopping, called twice this week", "large transfer out pending", "unhappy with renewal rate",
@@ -450,7 +446,6 @@ def generate_raw_data(CATALOG, SCHEMA):
     _save(risk_df, "raw_risk_snapshots")
 
     # ── 6. Retention campaigns ─────────────────────────────────────────────────
-    print("\n[6/6] Generating retention campaigns...")
     cust_pop_arr = F.array(*[F.lit(f"CUST-{i + 1:07d}") for i in range(8000)])
     aff_prod_arr2 = F.array(*[F.lit(p) for p in AFFECTED_PRODUCTS])
     xsell_arr = F.array(*[F.lit(p) for p in CROSS_SELL_TARGETS])
@@ -495,7 +490,6 @@ def generate_raw_data(CATALOG, SCHEMA):
     )
     _save(campaigns_df, "raw_retention_campaigns")
 
-    print(f"\n✅ Meridian raw data generated in {CATALOG}.{SCHEMA} (volume {RAW_VOL}).")
 
 # COMMAND ----------
 
@@ -510,10 +504,7 @@ def _raw_data_exists():
     except Exception:
         return False
 
-if _raw_data_exists():
-    print(f"Raw data already present in {raw_root}")
-else:
-    print(f"Raw data not found — generating into {catalog_name}.{schema_name} ...")
+if not _raw_data_exists():
     generate_raw_data(catalog_name, schema_name)
 
 # COMMAND ----------
@@ -523,10 +514,7 @@ else:
 # mirroring the wine workshop's single wine_quality_table. Each customer gets
 # demographic, holdings, and recent-transaction features, plus a binary `churned`
 # label derived from the latest attrition risk snapshot.
-if spark.catalog.tableExists(f"{catalog_name}.{schema_name}.{table_name}"):
-    print(f"Using existing {table_name} in {catalog_name}.{schema_name}")
-else:
-    print(f"Creating {table_name} in {catalog_name}.{schema_name}")
+if not spark.catalog.tableExists(f"{catalog_name}.{schema_name}.{table_name}"):
 
     customers    = spark.read.parquet(f"{raw_root}/customers")
     holdings     = spark.read.parquet(f"{raw_root}/holdings")
@@ -610,9 +598,6 @@ else:
     )
 
     churn_df.write.mode("overwrite").saveAsTable(table_name)
-    n = spark.table(table_name).count()
-    rate = spark.table(table_name).agg(F.avg("churned")).first()[0]
-    print(f"Created {table_name} with {n} rows  (churn rate {rate:.1%})")
 
 # COMMAND ----------
 
@@ -620,7 +605,6 @@ else:
 # Expose the customer-360 DataFrame so every notebook can use `df` right after
 # running `%run "./00-Setup"` (no separate load cell needed downstream).
 df = spark.table(table_name)
-print(f"Loaded {table_name}: {df.count()} rows")
 
 # COMMAND ----------
 
@@ -633,14 +617,12 @@ _tag_sql = ", ".join([f"'{k}' = '{v}'" for k, v in WORKSHOP_TAGS.items()])
 def tag_table(fqname):
     try:
         spark.sql(f"ALTER TABLE {fqname} SET TAGS ({_tag_sql})")
-        print(f"Tagged table {fqname}")
     except Exception as e:
         print(f"Could not tag {fqname}: {e}")
 
 tag_table(f"{catalog_name}.{schema_name}.{table_name}")
 try:
     spark.sql(f"ALTER VOLUME {catalog_name}.{schema_name}.raw_data SET TAGS ({_tag_sql})")
-    print("Tagged volume raw_data")
 except Exception as e:
     print(f"Could not tag volume raw_data: {e}")
 
@@ -650,12 +632,13 @@ except Exception as e:
 experiments_dir = f"/Workspace{workshop_dir}/experiments"
 os.makedirs(experiments_dir, exist_ok=True)
 
-model_name = f"{catalog_name}.{schema_name}.bank_churn_model"
+model_name = f"{catalog_name}.{schema_name}.customer_churn_model"
+model_name_no_fs = f"{catalog_name}.{schema_name}.customer_churn_model_no_feature_store"  # takes features directly; serves without an online store
 feature_table_name = f"{catalog_name}.{schema_name}.customer_churn_features"
 base_table_name = f"{catalog_name}.{schema_name}.customer_churn"
 experiment_path = f"/Workspace{workshop_dir}/experiments/bank-churn-training"
 model_uri = f"models:/{model_name}@dev"
-endpoint_name = "sbc-bank-churn-" + re.sub(r'[^a-zA-Z0-9-]', '-', username)
+endpoint_name = "customer_churn_endpoint"
 # Offline holdout-evaluation log written by 07 Section C (predictions + true labels).
 # Distinct from the LIVE serving table monitored in 07 Section D
 # (customer_churn_inference_unpacked). Named _eval_log to avoid confusion.
@@ -674,6 +657,7 @@ DA = SimpleNamespace(
     schema_name=schema_name,
     workshop_dir=workshop_dir,
     model_name=model_name,
+    model_name_no_fs=model_name_no_fs,
     feature_table_name=feature_table_name,
     base_table_name=base_table_name,
     experiment_path=experiment_path,
@@ -685,8 +669,7 @@ DA = SimpleNamespace(
     tag_sql=_tag_sql,
 )
 
-del model_name, feature_table_name, base_table_name, experiment_path, model_uri, endpoint_name, inference_log, feature_columns
-print("Setup complete!")
+del model_name, model_name_no_fs, feature_table_name, base_table_name, experiment_path, model_uri, endpoint_name, inference_log, feature_columns
 
 # COMMAND ----------
 
@@ -698,14 +681,15 @@ print(f"Base table:     {DA.base_table_name}")
 print(f"Feature table:  {DA.feature_table_name}")
 print(f"Model:          {DA.model_name}")
 print(f"Endpoint:       {DA.endpoint_name}")
+print("Setup complete!")
 
 # COMMAND ----------
 
-# DBTITLE 1,07-Observability — Load Dev Model & Held-out Split
+# DBTITLE 1,07 (Observability & Continuous Retrain) — Load Dev Model & Held-out Split
 # 00-Setup runs INLINE via `%run`, so `notebook_path` (set near the top) resolves to the
 # CALLING notebook. We only do the heavier dev-model download + held-out split when 00 is
-# run from 07-Observability; every other notebook that `%run`s 00-Setup skips this entirely.
-if notebook_path.endswith("07-Observability"):
+# run from Notebook 07; every other notebook that `%run`s 00-Setup skips this entirely.
+if notebook_path.endswith("07-Observability-and-Continuous-Retrain"):
     mlflow.set_registry_uri("databricks-uc")
     client = MlflowClient()
     model_name = DA.model_name
@@ -713,8 +697,7 @@ if notebook_path.endswith("07-Observability"):
     sk_model = None
     try:
         model_version = client.get_model_version_by_alias(model_name, "dev")
-        run_id = model_version.run_id
-        artifact_path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path="bank_churn_model")
+        artifact_path = mlflow.artifacts.download_artifacts(artifact_uri=f"models:/{model_name}@dev")
         for _root, _dirs, _files in os.walk(artifact_path):
             for _f in _files:
                 if _f.endswith(".pkl"):
@@ -733,13 +716,10 @@ if notebook_path.endswith("07-Observability"):
             X, y, test_size=0.2, random_state=42, stratify=y
         )
 
-        # Print the loaded model only if the artifact was actually found.
-        if sk_model is not None:
-            print(f"Loaded model: {model_name} (version {model_version.version})")
-            print(f"Model type:   {type(sk_model).__name__}")
-        else:
+        # Verify + report readiness (moved from 07 cell 4) — only when run from Notebook 07.
+        if sk_model is None:
             print("⚠️  Model artifact (.pkl) not found — SHAP/explainability (Section B) will be skipped.")
-        print(f"Held-out test set: {X_test.shape[0]} samples × {X_test.shape[1]} features")
+        else:
+            print(f"Ready for observability: {model_name}  ·  held-out test set {X_test.shape[0]} rows × {X_test.shape[1]} features")
     except Exception as e:
         print(f"⚠️  Dev model/data not loaded (run 04-Model-Training first): {e}")
-print("Setup complete!")

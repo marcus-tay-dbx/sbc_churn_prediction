@@ -17,7 +17,7 @@
 # ///
 # DBTITLE 1,Title
 # MAGIC %md
-# MAGIC # 08 - MLflow (Deployment Jobs)
+# MAGIC # 08 - Continuous Deployment
 # MAGIC
 # MAGIC In this notebook, we create an **MLflow Deployment Job** and connect it to a registered model in Unity Catalog. When a new model version is registered, the deployment job **auto-triggers** to evaluate, approve, and deploy the model.
 # MAGIC
@@ -149,4 +149,4 @@ except Exception as e:
 # MAGIC
 # MAGIC The deployment job integrates with **Unity Catalog's CREATE MODEL VERSION ACL** — users with permission can register versions, and the job handles the rest.
 # MAGIC
-# MAGIC > **Next**: Return to **04-Model-Training** to retrain, or proceed to **09-Migration**.
+# MAGIC > **Next**: Return to `04-Model-Training` to retrain, or proceed to `09-Compute-Resource-Selection`.

@@ -16,25 +16,38 @@
 # ]
 # ///
 # DBTITLE 1,Title
-# MAGIC %md
-# MAGIC # 07 - Observability, Monitoring & Explainability
-# MAGIC
-# MAGIC After training and registering a model, the next critical step is ensuring you can **observe**, **explain**, and **monitor** its behavior — both before and after deployment.
-# MAGIC
-# MAGIC This notebook spans two lifecycle phases:
-# MAGIC
-# MAGIC **① BEFORE deploying to an endpoint (dev / pre-production)** — validate the registered `@dev` model:
-# MAGIC - **A.** MLflow Experiment Tracking & Run Comparison
-# MAGIC - **B.** Feature Importance & Model Explainability (SHAP)
-# MAGIC - **C.** Offline Quality Validation (held-out evaluation)
-# MAGIC
-# MAGIC **② AFTER the model is deployed & serving (BAU / production)** — needs a live endpoint with traffic:
-# MAGIC - **D.** Lakehouse Monitoring of live predictions (drift)
-# MAGIC - **E.** Retrain on Drift (continuous training)
-# MAGIC
-# MAGIC So A–C run against the **dev model before it reaches an endpoint**; D–E are the ongoing **BAU** loop once it's deployed (they no-op cleanly here until the endpoint has captured traffic).
-# MAGIC
-# MAGIC **Prerequisites**: Run `00-Setup` and `04-Model-Training` first (and, for D–E, deploy the endpoint in `06`).
+# MAGIC %md-sandbox
+# MAGIC <div style="max-width:960px;margin:0 auto;font-family:sans-serif;color:#0b2026;">
+# MAGIC   <div style="font-size:22pt;font-weight:700;margin-bottom:4px;">07 · Observability &amp; Continuous Retrain</div>
+# MAGIC   <div style="font-size:13pt;color:#5E7077;margin-bottom:18px;">Observe, explain, and monitor the model — <b>before</b> and <b>after</b> it is deployed.</div>
+# MAGIC   <div style="display:flex;gap:20px;flex-wrap:wrap;">
+# MAGIC     <div style="flex:1 1 380px;background:#F9F7F4;border-radius:10px;box-shadow:0 2px 8px rgba(27,49,57,0.08);padding:20px 22px;position:relative;overflow:hidden;">
+# MAGIC       <div style="position:absolute;top:0;left:0;width:100%;height:8px;background:#1B5162;"></div>
+# MAGIC       <div style="display:inline-block;background:#1B5162;color:#fff;font-size:10pt;font-weight:700;padding:4px 12px;border-radius:999px;margin-bottom:10px;">① BEFORE deployment · dev</div>
+# MAGIC       <div style="font-size:14pt;font-weight:700;margin-bottom:6px;">Validate the <code>@dev</code> model</div>
+# MAGIC       <div style="font-size:11.5pt;color:#5E7077;margin-bottom:12px;">Runs against the registered model, before it reaches an endpoint.</div>
+# MAGIC       <div style="font-size:12.5pt;line-height:1.8;">
+# MAGIC         <b>A.</b> MLflow tracking &amp; run comparison<br/>
+# MAGIC         <b>B.</b> Feature importance + SHAP explainability<br/>
+# MAGIC         <b>C.</b> Held-out quality validation
+# MAGIC       </div>
+# MAGIC     </div>
+# MAGIC     <div style="flex:1 1 380px;background:#F9F7F4;border-radius:10px;box-shadow:0 2px 8px rgba(27,49,57,0.08);padding:20px 22px;position:relative;overflow:hidden;">
+# MAGIC       <div style="position:absolute;top:0;left:0;width:100%;height:8px;background:#FF5F46;"></div>
+# MAGIC       <div style="display:inline-block;background:#FF5F46;color:#fff;font-size:10pt;font-weight:700;padding:4px 12px;border-radius:999px;margin-bottom:10px;">② AFTER deployment · BAU</div>
+# MAGIC       <div style="font-size:14pt;font-weight:700;margin-bottom:6px;">Monitor live traffic &amp; retrain</div>
+# MAGIC       <div style="font-size:11.5pt;color:#5E7077;margin-bottom:12px;">Needs a live endpoint with traffic (deploy in Notebook 06).</div>
+# MAGIC       <div style="font-size:12.5pt;line-height:1.8;">
+# MAGIC         <b>D.</b> Lakehouse Monitoring of live predictions (drift)<br/>
+# MAGIC         <b>E.</b> Retrain on drift (continuous training)
+# MAGIC       </div>
+# MAGIC     </div>
+# MAGIC   </div>
+# MAGIC   <div style="margin-top:16px;font-size:11pt;color:#5E7077;">
+# MAGIC     <b>Section color key</b> (each section below is tagged): &nbsp; 🟦 <b>① BEFORE</b> deployment (dev) &nbsp;·&nbsp; 🟧 <b>② AFTER</b> deployment (BAU)
+# MAGIC   </div>
+# MAGIC   <div style="font-size:11.5pt;color:#5E7077;margin-top:16px;"><b>Prerequisites:</b> run Notebook 00-Setup and Notebook 04 first; for D–E, deploy the endpoint in Notebook 06. Sections D–E no-op cleanly until the endpoint has captured traffic.</div>
+# MAGIC </div>
 
 # COMMAND ----------
 
@@ -48,23 +61,11 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Model & Data (loaded by 00-Setup)
-# The dev model (`sk_model`), held-out split (`X_test`/`y_test`), `feature_cols`, and
-# `model_name` are loaded by 00-Setup above — but only when 00 is run from THIS notebook
-# (see 00-Setup's final cell). This keeps the model/data-loading logic centralized in 00.
-assert "sk_model" in globals() and sk_model is not None, (
-    "Dev model not loaded. Run 04-Model-Training first, then re-run this notebook — "
-    "00-Setup loads the model + held-out split only when it is run from 07-Observability."
-)
-print(f"Ready for observability: {model_name}")
-print(f"Held-out test set: {X_test.shape[0]} samples × {X_test.shape[1]} features")
-
-# COMMAND ----------
-
 # DBTITLE 1,Section A - MLflow Tracking
 # MAGIC %md
 # MAGIC ## A. MLflow Experiment Tracking & Run Comparison
-# MAGIC > **Phase ① — dev / pre-deployment.** Runs against the registered `@dev` model **before** it reaches an endpoint. 
+# MAGIC
+# MAGIC 🟦 **① BEFORE deployment · dev** — Runs against the registered `@dev` model, before it reaches an endpoint.
 # MAGIC
 # MAGIC MLflow automatically captures everything needed to reproduce and compare model training runs:
 # MAGIC - **Parameters** — hyperparameters, model type, training method
@@ -77,7 +78,7 @@ print(f"Held-out test set: {X_test.shape[0]} samples × {X_test.shape[1]} featur
 # MAGIC 2. Click into the experiment to see a **table of all runs** with parameters, metrics, and duration
 # MAGIC 3. Select two or more runs and click **Compare** to see metric charts side by side
 # MAGIC 4. Click a single run to inspect its **Parameters**, **Metrics**, **Artifacts** (model files, signature), and **Tags**
-# MAGIC 5. Under **Artifacts**, expand `bank_churn_model` to see the logged model, `requirements.txt`, and `MLmodel` spec
+# MAGIC 5. Under **Artifacts**, expand `customer_churn_model` to see the logged model, `requirements.txt`, and `MLmodel` spec
 # MAGIC
 # MAGIC Below we query the experiment to compare all runs programmatically.
 
@@ -106,7 +107,8 @@ else:
 # DBTITLE 1,Section B - Explainability
 # MAGIC %md
 # MAGIC ## B. Feature Importance & Model Explainability
-# MAGIC > **Phase ① — dev / pre-deployment.** Runs against the registered `@dev` model **before** it reaches an endpoint. 
+# MAGIC
+# MAGIC 🟦 **① BEFORE deployment · dev** — Runs against the registered `@dev` model, before it reaches an endpoint.
 # MAGIC
 # MAGIC **Why explainability matters:**
 # MAGIC - Regulatory compliance (model audit trails — especially in banking)
@@ -117,7 +119,7 @@ else:
 # MAGIC **Viewing from the UI:**
 # MAGIC 1. Go to **Experiments** → open the `bank-churn-training` experiment → click a run
 # MAGIC 2. Under the **Artifacts** tab, look for logged SHAP plots or feature importance charts (if logged as artifacts)
-# MAGIC 3. Navigate to **Models** in the left sidebar → open `solution_builder.sbc_churn_prediction.bank_churn_model`
+# MAGIC 3. Navigate to **Models** in the left sidebar → open `solution_builder.sbc_churn_prediction.customer_churn_model`
 # MAGIC 4. Click a **model version** to see its lineage: which experiment run produced it, the signature (input/output schema), and any tags/aliases (`dev`, `prod`)
 # MAGIC 5. The **Schema** section shows the exact feature columns the model expects — useful for validating inference payloads
 # MAGIC
@@ -184,7 +186,8 @@ plt.show()
 # MAGIC %md
 # MAGIC ## C. Offline Quality Validation (Held-out Evaluation)
 # MAGIC
-# MAGIC > **Phase ① — dev / pre-deployment.** Runs against the registered `@dev` model **before** it reaches an endpoint. 
+# MAGIC
+# MAGIC 🟦 **① BEFORE deployment · dev** — Runs against the registered `@dev` model, before it reaches an endpoint.
 # MAGIC
 # MAGIC Before deploying, validate model quality on a **held-out test split** — data the model
 # MAGIC did **not** train on — so the metrics are unbiased. We predict on `X_test` here on
@@ -281,7 +284,8 @@ print(f"Incorrect predictions: {(~eval_df['correct']).sum()}")
 # DBTITLE 1,Section D - Monitoring
 # MAGIC %md
 # MAGIC ## D. Lakehouse Monitoring of Live Predictions
-# MAGIC > **Phase ② — BAU / production.** 
+# MAGIC
+# MAGIC 🟧 **② AFTER deployment · BAU** — Needs the deployed endpoint with live traffic.
 # MAGIC
 # MAGIC Monitoring the live endpoint is a **three-step pipeline**:
 # MAGIC
@@ -301,7 +305,6 @@ print(f"Incorrect predictions: {(~eval_df['correct']).sum()}")
 # MAGIC | **Prediction drift** | Detects when the model's output distribution changes |
 # MAGIC | **Data quality** | Tracks nulls, schema changes, volume anomalies |
 # MAGIC | **Custom metrics** | Define business-specific quality metrics |
-# MAGIC
 
 # COMMAND ----------
 
@@ -377,10 +380,7 @@ else:
 # COMMAND ----------
 
 # DBTITLE 1,Option 2 - By Script
-# Create a monitor ON THE UNPACKED TABLE (not the raw payload table). It computes
-# profile + drift metric tables and a dashboard on a schedule. `label_col` is
-# optional — once ground-truth churn is backfilled, quality metrics (F1/precision/
-# recall over time) populate too.
+# Create the InferenceLog monitor on the unpacked table.
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.catalog import MonitorInferenceLog, MonitorInferenceLogProblemType
 
@@ -408,112 +408,103 @@ except Exception:
         # `model_version` columns — so the raw `customer_churn_features` table can't be used here.
         slicing_exprs=["tier_rank", "has_maturing_cd"],
     )
-    print("Monitor created. It generates:")
-    print(f"  • {unpacked_table}_profile_metrics")
-    print(f"  • {unpacked_table}_drift_metrics   (the table your retrain gate reads)")
-    print("  • a monitoring dashboard (see the table's Quality tab)")
+    print(f"Monitor created on {unpacked_table} — generates profile + drift metric tables and a dashboard.")
 
 # COMMAND ----------
 
-# DBTITLE 1,Monitoring Readiness Check
-print("=" * 60)
-print("OBSERVABILITY READINESS SUMMARY")
-print("=" * 60)
-print(f"\n  Model:          {model_name}")
-print(f"  Experiment:     {experiment_path}")
-print(f"  Inference log:  {inference_table_name}")
-print(f"  Test F1:        {f1:.4f}")
-print(f"  Test Accuracy:  {accuracy:.1%}")
-print(f"\n  [x] MLflow experiment tracking")
-print(f"  [x] Feature importance computed")
-print(f"  [x] SHAP explainability generated")
-print(f"  [x] Classification report logged")
-print(f"  [x] Confusion matrix analyzed")
-print(f"  [x] Prediction distribution validated")
-print(f"  [x] Inference table saved to UC")
-print(f"  [ ] Lakehouse Monitoring (enable via UI)")
-print(f"\nReady for deployment → proceed to 08-MLFlow")
+# DBTITLE 1,D3. Refresh the Monitors
+# Refresh both monitors so their metric tables + dashboards populate (needs monitor ACTIVE).
+import time
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service.catalog import MonitorInfoStatus
+
+w = WorkspaceClient()
+unpacked_tbl = f"{DA.catalog_name}.{DA.schema_name}.customer_churn_inference_unpacked"
+batch_log_table = f"{DA.catalog_name}.{DA.schema_name}.customer_churn_batch_inference_log"
+for tbl in [unpacked_tbl, batch_log_table]:
+    if not spark.catalog.tableExists(tbl):
+        print(f"Skip {tbl} — table not found.")
+        continue
+    try:
+        for attempt in range(40):
+            if w.quality_monitors.get(tbl).status == MonitorInfoStatus.MONITOR_STATUS_ACTIVE:
+                break
+            time.sleep(15)
+        run = w.quality_monitors.run_refresh(table_name=tbl)
+        print(f"Refresh triggered on {tbl} (id {run.refresh_id}).")
+    except Exception as e:
+        print(f"No monitor on {tbl} yet ({type(e).__name__}).")
 
 # COMMAND ----------
 
 # DBTITLE 1,Section E - Retrain on Drift
-# MAGIC %md
-# MAGIC ## E. Retrain on Drift (Continuous Training)
+# MAGIC %md-sandbox
+# MAGIC <div class="pipe-wrap">
+# MAGIC <style>
+# MAGIC .pipe-wrap { max-width: 940px; margin: 0 auto; font-family: sans-serif; color:#0b2026; padding:8px; box-sizing:border-box; }
+# MAGIC .pipe-header { background:#1B5162; color:#fff; border-radius:10px; padding:18px 24px; text-align:center; margin-bottom:20px; box-shadow:0 2px 8px rgba(27,49,57,0.10); }
+# MAGIC .pipe-header .t { font-size:17pt; font-weight:700; margin:0 0 4px 0; }
+# MAGIC .pipe-header .s { font-size:12pt; opacity:0.92; margin:0; }
+# MAGIC .flow { display:flex; flex-wrap:wrap; align-items:stretch; justify-content:center; gap:8px; }
+# MAGIC .node { flex:0 0 150px; background:#F9F7F4; border-radius:8px; box-shadow:0 2px 8px rgba(27,49,57,0.06); padding:14px 10px 12px 10px; text-align:center; position:relative; box-sizing:border-box; }
+# MAGIC .node::before { content:""; position:absolute; top:0; left:0; width:100%; height:6px; border-radius:8px 8px 0 0; }
+# MAGIC .node.mon::before { background:#1B5162; } .node.task::before { background:#00A972; } .node.deploy::before { background:#FFAB00; } .node.ep::before { background:#4299E0; }
+# MAGIC .node .lbl { font-size:8.5pt; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; margin:2px 0 4px 0; color:#5A6F77; }
+# MAGIC .node .nm { font-size:10.5pt; font-weight:700; color:#0b2026; line-height:1.25; margin:0 0 4px 0; }
+# MAGIC .node .ds { font-size:9pt; color:#5E7077; line-height:1.35; margin:0; }
+# MAGIC .arrow { display:flex; align-items:center; justify-content:center; color:#5E7077; font-size:18pt; font-weight:700; flex:0 0 16px; }
+# MAGIC .steps { max-width:900px; margin:18px auto 0 auto; font-size:12.5pt; line-height:1.6; color:#0b2026; padding-left:22px; }
+# MAGIC .steps li { margin-bottom:6px; }
+# MAGIC .loopback { max-width:900px; margin:12px auto 0 auto; border:2px dashed #00A972; border-radius:8px; background:rgba(0,169,114,0.06); padding:10px 16px; text-align:center; font-size:11pt; font-weight:600; color:#1B5162; }
+# MAGIC .loopback .a { color:#00A972; font-weight:800; font-size:15pt; }
+# MAGIC </style>
 # MAGIC
-# MAGIC This closes the ML lifecycle loop, right where the drift signal is produced: the
-# MAGIC monitor from Section D writes a `..._drift_metrics` table; here we **gate on that drift**
-# MAGIC and, when it trips, **retrain by calling `04-Model-Training` directly** (the same
-# MAGIC `dbutils.notebook.run` pattern `00` uses for `generate_data`). `04` registers a new
-# MAGIC version → the deployment job (`08`) auto-fires: Evaluate → Approve → Deploy → champion → endpoint.
+# MAGIC <div class="pipe-header">
+# MAGIC   <div style="display:inline-block;background:#FF5F46;color:#fff;padding:3px 11px;border-radius:999px;font-size:9pt;font-weight:700;letter-spacing:0.5px;margin-bottom:8px;">② AFTER deployment · BAU</div>
+# MAGIC   <div class="t">E. Retrain on Drift — continuous-training loop</div>
+# MAGIC   <div class="s">The monitor's drift signal triggers a gated job that retrains and redeploys — automatically.</div>
+# MAGIC </div>
 # MAGIC
-# MAGIC ```
-# MAGIC  D monitor → _drift_metrics → [E drift gate] → run 04 → register → 08 deploy → endpoint
-# MAGIC ```
+# MAGIC <div class="flow">
+# MAGIC   <div class="node mon"><div class="lbl">Monitor · 07 D</div><div class="nm">Drift metrics</div><div class="ds">writes …_drift_metrics</div></div>
+# MAGIC   <div class="arrow">&#8594;</div>
+# MAGIC   <div class="node task"><div class="lbl">Task 1</div><div class="nm">drift_gate</div><div class="ds">Notebook 07-…-Retrain-Drift-Gate → sets retrain_needed</div></div>
+# MAGIC   <div class="arrow">&#8594;</div>
+# MAGIC   <div class="node task"><div class="lbl">Task 2</div><div class="nm">check_drift</div><div class="ds">proceed only if retrain_needed = true</div></div>
+# MAGIC   <div class="arrow">&#8594;</div>
+# MAGIC   <div class="node task"><div class="lbl">Task 3</div><div class="nm">retrain</div><div class="ds">Notebook 04 → new model version</div></div>
+# MAGIC   <div class="arrow">&#8594;</div>
+# MAGIC   <div class="node deploy"><div class="lbl">Auto</div><div class="nm">Deployment job</div><div class="ds">Notebook 08 → Evaluate · Approve · Deploy</div></div>
+# MAGIC   <div class="arrow">&#8594;</div>
+# MAGIC   <div class="node ep"><div class="lbl">Serving</div><div class="nm">Endpoint</div><div class="ds">updated to champion</div></div>
+# MAGIC </div>
 # MAGIC
-# MAGIC The recurring version of this runs as its **own job** (created below) so it fires on a
-# MAGIC schedule/drift trigger — distinct from the deployment job (different trigger; nesting
-# MAGIC training inside deployment would loop). The two connect only through the Model Registry.
+# MAGIC <div class="loopback"><span class="a">&#8634;</span> &nbsp;<b>Continuous loop</b> — the served <b>Endpoint</b>'s live traffic produces new <b>Drift metrics</b>, which re-trigger the gate. (Endpoint&nbsp;&#8594;&nbsp;Drift metrics)</div>
+# MAGIC
+# MAGIC <ol class="steps">
+# MAGIC   <li><b>Trigger</b> — the job fires when the monitor writes new rows to the drift-metrics table (paused by default; or use a schedule).</li>
+# MAGIC   <li><b>Task 1 · drift_gate</b> — runs <b>Notebook 07-Observability-Retrain-Drift-Gate</b>; reads drift and sets a <code>retrain_needed</code> flag.</li>
+# MAGIC   <li><b>Task 2 · check_drift</b> — a condition task that continues <b>only when</b> <code>retrain_needed = true</code>.</li>
+# MAGIC   <li><b>Task 3 · retrain</b> — runs <b>Notebook 04 (Model Training)</b>, registering a new version; <b>Notebook 08</b>'s deployment job then auto-promotes it to the endpoint.</li>
+# MAGIC </ol>
+# MAGIC
+# MAGIC <p class="steps" style="padding-left:0; list-style:none;">The retrain job is <b>separate</b> from the deployment job (different trigger; nesting training inside deployment would loop) — they connect only through the Model Registry.</p>
+# MAGIC </div>
 
 # COMMAND ----------
 
-# DBTITLE 1,E1. Drift Gate
-# Read the InferenceLog monitor's drift-metrics table (Section D) and decide whether
-# prediction drift vs the training baseline exceeds the threshold in the latest window.
-dbutils.widgets.text("drift_threshold", "0.2", "Drift threshold (JS distance)")
-dbutils.widgets.dropdown("force_retrain", "false", ["true", "false"], "Force retrain (ignore gate)")
-
-drift_threshold = float(dbutils.widgets.get("drift_threshold") or "0.2")
-force_retrain = dbutils.widgets.get("force_retrain").lower() == "true"
-drift_table = f"{DA.catalog_name}.{DA.schema_name}.customer_churn_inference_unpacked_drift_metrics"
-
-retrain_needed = False
-reason = ""
-if force_retrain:
-    retrain_needed, reason = True, "force_retrain=true"
-elif not spark.catalog.tableExists(drift_table):
-    reason = (f"No drift-metrics table yet ({drift_table}). Set up the monitor in Section D and let "
-              f"it refresh (needs endpoint traffic). Nothing to retrain on.")
-else:
-    try:
-        latest = (
-            spark.table(drift_table)
-            .filter((F.col("column_name") == "prediction") & (F.col("drift_type") == "BASELINE"))
-            .orderBy(F.col("window.start").desc()).limit(1).collect()
-        )
-        if not latest:
-            reason = "Drift-metrics table has no BASELINE row for `prediction` yet (monitor not refreshed)."
-        else:
-            js = latest[0]["js_distance"]
-            retrain_needed = js is not None and js >= drift_threshold
-            reason = f"prediction JS distance = {js} (threshold {drift_threshold})"
-    except Exception as e:
-        reason = f"Could not read drift metrics ({type(e).__name__}: {e}). Skipping retrain."
-
-print(f"Drift gate → retrain_needed = {retrain_needed}")
-print(f"Reason: {reason}")
-
-# COMMAND ----------
-
-# DBTITLE 1,E2. Conditional Retrain — call 04-Model-Training directly
-if retrain_needed:
-    training_notebook = f"{DA.workshop_dir}/04-Model-Training"
-    print(f"Drift gate TRIPPED — retraining via {training_notebook} ...")
-    result = dbutils.notebook.run(training_notebook, 3600)
-    print(f"Retrain finished: {result}")
-    print("A new model version is registered → the deployment job (08) auto-fires.")
-else:
-    print("Drift within threshold (or monitor not ready) — no retrain triggered.")
-
-# COMMAND ----------
-
-# DBTITLE 1,E3. Create the Retrain-on-Drift Job
-# Registers a separate job that runs THIS notebook on a (paused) schedule. Enable it —
-# or add a table-update trigger on the drift-metrics table — for hands-off retraining.
-from databricks.sdk.service.jobs import CronSchedule, PauseStatus
+# DBTITLE 1,Create the Retrain-on-Drift Job
+# Build the gated retrain job shown above: drift_gate → check_drift → retrain (Notebook 04).
+from databricks.sdk.service.jobs import (
+    Task, NotebookTask, Source, TaskDependency, ConditionTask, ConditionTaskOp,
+    TriggerSettings, TableUpdateTriggerConfiguration, PauseStatus,
+)
 
 w = WorkspaceClient()
 job_name = f"SBC Bank Churn Retrain-on-Drift — {DA.model_name}"
-this_notebook = f"/Workspace{DA.workshop_dir}/07-Observability"
+gate_notebook = f"/Workspace{DA.workshop_dir}/07-Observability-Retrain-Drift-Gate"
+training_notebook = f"/Workspace{DA.workshop_dir}/04-Model-Training"
+drift_table = f"{DA.catalog_name}.{DA.schema_name}.customer_churn_inference_unpacked_drift_metrics"
 
 existing = [j for j in w.jobs.list(name=job_name)]
 if existing:
@@ -524,22 +515,40 @@ else:
         name=job_name,
         tags={"sbc": "true", "churn-prediction": "true"},
         max_concurrent_runs=1,
-        schedule=CronSchedule(quartz_cron_expression="0 0 6 * * ?", timezone_id="UTC",
-                              pause_status=PauseStatus.PAUSED),
+        # Fire when the monitor writes new drift metrics (paused until you enable it).
+        trigger=TriggerSettings(
+            pause_status=PauseStatus.PAUSED,
+            table_update=TableUpdateTriggerConfiguration(table_names=[drift_table]),
+        ),
         tasks=[
             Task(
-                task_key="retrain_on_drift",
+                task_key="drift_gate",
                 notebook_task=NotebookTask(
-                    notebook_path=this_notebook,
-                    source=Source("WORKSPACE"),
+                    notebook_path=gate_notebook, source=Source("WORKSPACE"),
                     base_parameters={"drift_threshold": "0.2", "force_retrain": "false"},
+                ),
+            ),
+            Task(
+                task_key="check_drift",
+                depends_on=[TaskDependency(task_key="drift_gate")],
+                condition_task=ConditionTask(
+                    left="{{tasks.drift_gate.values.retrain_needed}}",
+                    op=ConditionTaskOp.EQUAL_TO,
+                    right="true",
+                ),
+            ),
+            Task(
+                task_key="retrain",
+                depends_on=[TaskDependency(task_key="check_drift", outcome="true")],
+                notebook_task=NotebookTask(
+                    notebook_path=training_notebook, source=Source("WORKSPACE"),
                 ),
             ),
         ],
     )
     print(f"Created retrain job: {retrain_job.job_id}")
 print(f"View at: {w.config.host}/#job/{retrain_job.job_id}")
-print("Schedule is PAUSED — enable it in the Jobs UI when ready.")
+print("Trigger is PAUSED — enable it in the Jobs UI (or swap to a CronSchedule) when ready.")
 
 # COMMAND ----------
 
@@ -553,8 +562,8 @@ print("Schedule is PAUSED — enable it in the Jobs UI when ready.")
 # MAGIC - **Explainability** — feature importance and SHAP values explain model decisions
 # MAGIC - **Quality validation** — held-out classification report, confusion matrix, distribution checks
 # MAGIC - **Inference logging** — endpoint payloads unpacked + a Lakehouse InferenceLog monitor
-# MAGIC - **Retrain on drift** — a drift gate that calls `04` and a scheduled retrain job
+# MAGIC - **Retrain on drift** — a gated retrain job (drift gate → **Notebook 04**), triggered by the drift signal
 # MAGIC
 # MAGIC These practices ensure you can **debug**, **audit**, **trust**, and **continuously improve** the model in production.
 # MAGIC
-# MAGIC Next: Proceed to **08-MLFlow** for the deployment pipeline the retrain loop feeds into.
+# MAGIC Next: Proceed to **Notebook 08 (Continuous Deployment)** for the deployment pipeline the retrain loop feeds into.

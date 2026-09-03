@@ -8,6 +8,12 @@
 # ]
 # [tool.databricks.environment]
 # environment_version = "5"
+# dependencies = [
+#   "databricks-feature-engineering",
+#   "xgboost",
+#   "shap",
+#   "seaborn",
+# ]
 # ///
 # DBTITLE 1,Title
 # MAGIC %md
@@ -46,65 +52,78 @@
 # MAGIC %md
 # MAGIC ## B. Create a Model Serving Endpoint
 # MAGIC
-# MAGIC ### B1. From Code
+# MAGIC **Recommended pattern:** serve a model **registered with the Feature Store**, backed by an
+# MAGIC **online feature store in Lakebase** — the endpoint looks features up by `customer_id` with low
+# MAGIC latency, so callers send just the key.
 # MAGIC
-# MAGIC The cell below creates a serving endpoint using the `mlflow.deployments` API. If the endpoint already exists, it will be reused.
+# MAGIC When Lakebase isn't available, there's a **technical workaround (for demo purposes)**: serve a
+# MAGIC model **registered without the Feature Store** and pass the feature values directly in the request.
+# MAGIC
+# MAGIC The cells below **check for the online feature store**, then **deploy the matching model
+# MAGIC automatically** — Feature Store model if present, otherwise the no-feature-store model.
 
 # COMMAND ----------
 
 # DBTITLE 1,Check Online Feature Store
-# This model was packaged with the Feature Engineering client, so it can look up features by
-# customer_id at serving time — but only if an ONLINE (synced) feature table exists. We check
-# for it here and fall back gracefully to the OFFLINE feature table if it's missing (no hard fail).
+# Check whether the online (synced) feature store exists — B1 uses this to pick the model.
 synced_table_name = f"{DA.feature_table_name}_synced"
 online_store_available = spark.catalog.tableExists(synced_table_name)
-
-if online_store_available:
-    print(f"✅ Online feature store found: {synced_table_name}")
-    print(f"   Row count: {spark.table(synced_table_name).count():,}")
-    print("   The endpoint can look up features by customer_id (Option 1 in Section C).")
-else:
-    print(f"⚠️  Online feature store NOT found: {synced_table_name}")
-    print("   Deploying the endpoint against the OFFLINE feature table instead.")
-    print("   Real-time lookup by customer_id is unavailable — pass features directly (Option 2 in Section C).")
-    print("   To enable online lookup, create the synced table in Notebook 03 (Section D).")
+print(("✅ Online feature store found: " if online_store_available
+       else "⚠️  No online feature store: ") + synced_table_name)
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC > ⚠️ **Online feature store fallback**
-# MAGIC >
-# MAGIC > This model was logged with the Feature Engineering client, so it can **automatically
-# MAGIC > look up features by `customer_id`** at query time — but only when an **online (synced)
-# MAGIC > feature table** exists.
-# MAGIC >
-# MAGIC > - **If the synced table exists** → the endpoint serves lookups by `customer_id` (**Option 1** in Section C).
-# MAGIC > - **If it does not** → the endpoint is still deployed against the **offline feature table**, but
-# MAGIC >   online lookup is unavailable. You must pass all feature values directly in the request
-# MAGIC >   (**Option 2** in Section C). Create the synced table in **Notebook 03 (Section D)** to enable online lookup.
-# MAGIC >
-# MAGIC > Either way the deployment below succeeds — the difference is only in *how* you query the endpoint.
+# DBTITLE 1,B1a. Select the Model to Serve
+# Online store → serve the feature-store model; otherwise register + serve a no-feature-store model.
+import os, pickle
+from mlflow.models.signature import infer_signature
 
-# COMMAND ----------
-
-# DBTITLE 1,Deploy Endpoint
 mlflow.set_registry_uri("databricks-uc")
 client = get_deploy_client("databricks")
-
-# Create a unique endpoint name with structured prefix
 endpoint_name = DA.endpoint_name
-model_name = DA.model_name
-
-# Serve the current champion (fallback dev) version — never hardcode a version,
-# so the endpoint always launches on the promoted model.
 _mc = MlflowClient(registry_uri="databricks-uc")
+
+if online_store_available:
+    model_name = DA.model_name          # fe-model → online lookup by customer_id
+else:
+    # Register a no-feature-store model from the fe-model's estimator.
+    model_name = DA.model_name_no_fs
+    try:
+        _mc.get_model_version_by_alias(model_name, "dev")
+        print(f"No-feature-store model already registered: {model_name}")
+    except Exception:
+        art = mlflow.artifacts.download_artifacts(artifact_uri=f"models:/{DA.model_name}@dev")
+        sk_model = None
+        for root, _dirs, files in os.walk(art):
+            for fn in files:
+                if fn.endswith(".pkl"):
+                    with open(os.path.join(root, fn), "rb") as fh:
+                        sk_model = pickle.load(fh)
+                    break
+            if sk_model is not None:
+                break
+        sample = spark.table(DA.feature_table_name).select(*DA.feature_columns).limit(5).toPandas()
+        with mlflow.start_run(run_name="customer_churn-no-feature-store"):
+            info = mlflow.sklearn.log_model(
+                sk_model=sk_model, artifact_path="customer_churn_model_no_feature_store",
+                signature=infer_signature(sample, sk_model.predict(sample)), input_example=sample,
+            )
+        reg = mlflow.register_model(model_uri=info.model_uri, name=model_name)
+        _mc.set_registered_model_alias(name=model_name, alias="dev", version=reg.version)
+        for k, v in DA.tags.items():
+            _mc.set_registered_model_tag(name=model_name, key=k, value=v)
+        print(f"Registered no-feature-store model: {model_name} v{reg.version}")
+
+# COMMAND ----------
+
+# DBTITLE 1,B1b. Deploy the Endpoint
+# Serve the champion (else dev) version; create the endpoint if it doesn't exist yet.
 try:
     serving_version = str(_mc.get_model_version_by_alias(model_name, "champion").version)
 except Exception:
     serving_version = str(_mc.get_model_version_by_alias(model_name, "dev").version)
-print(f"Serving version: {serving_version}")
+print(f"Serving {model_name} version {serving_version}")
 
-# Check if endpoint exists, create if not
 try:
     existing_endpoint = client.get_endpoint(endpoint_name)
     print(f"Endpoint '{endpoint_name}' already exists.")
@@ -144,66 +163,36 @@ except Exception as e:
 # COMMAND ----------
 
 # DBTITLE 1,Enable Inference Logging (AI Gateway)
-# Legacy `auto_capture_config` is deprecated — enable logging via AI Gateway inference
-# tables. The mlflow.deployments client ignores the `ai_gateway` config key, so we set it
-# with the dedicated AI Gateway API (idempotent; works whether the endpoint is new or existing).
-# Captures each request/response to `<prefix>_payload` for monitoring & drift detection in 07.
+# Captures each request/response to `<prefix>_payload` for monitoring & drift detection in Notebeook 07.
 from databricks.sdk import WorkspaceClient
 
 _w = WorkspaceClient()
-_w.api_client.do(
-    "PUT",
-    f"/api/2.0/serving-endpoints/{endpoint_name}/ai-gateway",
-    body={
-        "inference_table_config": {
-            "catalog_name": DA.catalog_name,
-            "schema_name": DA.schema_name,
-            "table_name_prefix": "churn_endpoint",
-            "enabled": True,
-        }
-    },
-)
-print(f"Inference logging (AI Gateway) enabled → {DA.catalog_name}.{DA.schema_name}.churn_endpoint_payload")
-print("Payload rows appear after the endpoint serves requests (batched; ~10-30 min).")
+try:
+    _w.api_client.do(
+        "PUT",
+        f"/api/2.0/serving-endpoints/{endpoint_name}/ai-gateway",
+        body={
+            "inference_table_config": {
+                "catalog_name": DA.catalog_name,
+                "schema_name": DA.schema_name,
+                "table_name_prefix": "churn_endpoint",
+                "enabled": True,
+            }
+        },
+    )
+    print(f"Inference logging (AI Gateway) enabled → {DA.catalog_name}.{DA.schema_name}.churn_endpoint_payload")
+    print("Payload rows appear after the endpoint serves requests (batched; ~10-30 min).")
+except Exception as e:
+    if "already exists" in str(e):
+        print("Inference logging table already exists (prior run) — leaving it in place.")
+    else:
+        raise
 
 # COMMAND ----------
 
-# DBTITLE 1,Serve from Offline Feature Store
+# DBTITLE 1,Deploy from UI
 # MAGIC %md
-# MAGIC ### B2. Serve Using the Offline Feature Store
-# MAGIC
-# MAGIC When **no online (synced) feature table exists**, the endpoint can't look up features by
-# MAGIC `customer_id` on its own. You can still serve real-time predictions by **reading the features
-# MAGIC from the offline feature table at request time** and passing them directly to the endpoint.
-# MAGIC
-# MAGIC This is the offline-feature-store serving pattern — no online store required. The offline
-# MAGIC table (`customer_churn_features`) is the same one the model was logged against in Notebook 04,
-# MAGIC so the feature values match training exactly.
-
-# COMMAND ----------
-
-# DBTITLE 1,Query with Offline Features
-# Look up the target customers' features straight from the OFFLINE feature table,
-# then pass them directly to the endpoint (works with or without an online store).
-target_ids = ["CUST-0000214", "CUST-0000001", "CUST-0000002"]
-
-offline_features = (
-    spark.table(DA.feature_table_name)
-         .filter(F.col("customer_id").isin(target_ids))
-         .select("customer_id", *DA.feature_columns)
-         .toPandas()
-)
-print(f"Fetched {len(offline_features)} rows from offline feature table: {DA.feature_table_name}")
-
-offline_payload = {"dataframe_records": offline_features.to_dict("records")}
-response = client.predict(endpoint=endpoint_name, inputs=offline_payload)
-print(json.dumps(response, indent=2))
-
-# COMMAND ----------
-
-# DBTITLE 1,Query from UI
-# MAGIC %md
-# MAGIC ### B3. From the UI
+# MAGIC ### B2. From the UI
 # MAGIC
 # MAGIC You can also create and manage serving endpoints from the Databricks UI:
 # MAGIC
@@ -223,65 +212,25 @@ print(json.dumps(response, indent=2))
 # MAGIC
 # MAGIC ### C1. From a Notebook
 # MAGIC
-# MAGIC Send a REST API request to the serving endpoint with sample customer data.
+# MAGIC The query **matches how the model was deployed** (the `online_store_available` flag): with an
+# MAGIC online store → pass just `customer_id`; without one → pass the feature values directly.
 
 # COMMAND ----------
 
 # DBTITLE 1,Query Endpoint Code
-# --- Option 1: Pass customer_id — endpoint looks up features from the online store ---
-lookup_data = {
-    "dataframe_records": [
-        {"customer_id": "CUST-0000214"},
-        {"customer_id": "CUST-0000001"},
-        {"customer_id": "CUST-0000002"}
-    ]
-}
+if online_store_available:
+    # Feature-store model → pass only customer_id; the endpoint looks features up online.
+    payload = {"dataframe_records": [{"customer_id": c}
+                                     for c in ["CUST-0000214", "CUST-0000001", "CUST-0000002"]]}
+    print("Querying by customer_id (online feature lookup)")
+else:
+    # No-feature-store model → pass the 10 feature columns directly (read from the offline table).
+    sample = spark.table(DA.feature_table_name).select(*DA.feature_columns).limit(3).toPandas()
+    payload = {"dataframe_records": sample.to_dict("records")}
+    print("Querying by passing the 10 features directly (no online store)")
 
-print("Option 1: Feature Store lookup by customer_id")
-try:
-    response = client.predict(endpoint=endpoint_name, inputs=lookup_data)
-    print(json.dumps(response, indent=2))
-except Exception as e:
-    print(f"Error (needs an online/synced feature table — see 03 Section D): {e}")
-
-# --- Option 2: Pass features directly — no online store needed ---
-feature_data = {
-    "dataframe_records": [
-        {
-            "customer_id": "CUST-0000214",
-            "tenure_years": 12,
-            "total_balance_usd": 662000.0,
-            "num_products": 3,
-            "num_deposit_products": 2,
-            "has_maturing_cd": 1,
-            "txn_count_60d": 18,
-            "total_outflow_60d_usd": -420000.0,
-            "withdrawal_count_60d": 18,
-            "tier_rank": 2,
-            "balanceCategory": 2.0
-        },
-        {
-            "customer_id": "CUST-0000001",
-            "tenure_years": 4,
-            "total_balance_usd": 12500.0,
-            "num_products": 2,
-            "num_deposit_products": 1,
-            "has_maturing_cd": 0,
-            "txn_count_60d": 3,
-            "total_outflow_60d_usd": 0.0,
-            "withdrawal_count_60d": 0,
-            "tier_rank": 0,
-            "balanceCategory": 0.0
-        }
-    ]
-}
-
-print("\nOption 2: Pass features directly")
-try:
-    response = client.predict(endpoint=endpoint_name, inputs=feature_data)
-    print(json.dumps(response, indent=2))
-except Exception as e:
-    print(f"Error: {e}")
+response = client.predict(endpoint=endpoint_name, inputs=payload)
+print(json.dumps(response, indent=2))
 
 # COMMAND ----------
 
@@ -321,4 +270,4 @@ except Exception as e:
 # MAGIC - The **Serving UI** enables testing, monitoring, and A/B testing without code
 # MAGIC - Integration with Unity Catalog ensures **governance** and **lineage** in production
 # MAGIC
-# MAGIC Next: Proceed to **07-Observability** for monitoring and explainability.
+# MAGIC Next: Proceed to **Notebook 07 (Observability & Continuous Retrain)** for monitoring and explainability.
