@@ -32,12 +32,12 @@ the rest are **① dev / pre-deployment**, against the registered `@dev` model.
 | **Explore data** | 02 | **EDA with Genie Code** | Profiling, target distribution, correlation, outliers | Agent-mode EDA |
 | **Engineer features** | 03 | **Feature Engineering** | Feature variables, engineered `balanceCategory`, publish feature table, Lakebase synced table | Feature Store, FeatureLookup, Lakebase |
 | **Train & register** | 04 | **Model Training** | Train **RandomForest + XGBoost**, log both runs, register **best by PR-AUC** | MLflow tracking + UC registry |
-| **Validate** ① dev | 07 A–C | **Observability & Continuous Retrain** | MLflow compare · feature importance + SHAP · held-out eval → `customer_churn_eval_log` | SHAP, confusion matrix |
+| **Validate** ① dev | 07 A–C | **Observability & Continuous Retrain** | **A.** MLflow Experiment Tracking & Run Comparison · **B.** Feature Importance & Model Explainability (SHAP) · **C.** Offline Quality Validation (held-out eval) → `customer_churn_eval_log` | SHAP, confusion matrix |
 | **Batch inference** | 05 | **Batch Inference** | Score the book via `fe.score_batch` | Feature-store batch scoring |
-| **Deploy & serve** ② BAU | 06 | **Real-Time Inference** | Serving endpoint (champion version) + AI Gateway inference logging | Model Serving, inference tables |
-| **Monitor** ② BAU | 07 D | **Observability & Continuous Retrain** | Lakehouse Monitoring — unpack payloads + create monitor | Drift monitoring |
-| **Retrain** ② BAU | 07 E | **Observability & Continuous Retrain** | Retrain-on-drift gate + job → runs Notebook 04 | Continuous training |
-| **Deploy (CD)** ② BAU | 08 | **Continuous Deployment** | Deployment job + `08-MLFlow-Evaluate/Approve/Deploy` tasks | Evaluate → Approve → Deploy, champion alias, endpoint migration |
+| **Deploy & serve** ② BAU | 06 | **Real-Time Inference** | **A.** Introduction to Databricks Model Serving · **B.** Create a Model Serving Endpoint (champion) · **C.** Query the Serving Endpoint · **D.** Conclusion — with AI Gateway inference logging | Model Serving, inference tables |
+| **Monitor** ② BAU | 07 D | **Observability & Continuous Retrain** | **D.** Lakehouse Monitoring of Live Predictions — D1 unpack payloads · D2 enable monitor · D3 refresh | Drift monitoring |
+| **Retrain** ② BAU | 07 E | **Observability & Continuous Retrain** | **E.** Retrain on Drift — drift gate + job → runs Notebook 04 | Continuous training |
+| **Deploy (CD)** ② BAU | 08 | **Continuous Deployment** | **A.** Create a Deployment Job — Evaluate→Approve→Deploy tasks (`08-MLFlow-Evaluate/Approve/Deploy`) | Evaluate → Approve → Deploy, champion alias, endpoint migration |
 | **Others** | 09 | **Compute Resource Selection** | Recommended compute per workload: interactive, batch/scheduled, feature store, online store, serving | Serverless, Jobs, Lakebase, Model Serving |
 | **Others** | 10 | **Databricks Apps** | Retention Cockpit app — churn prediction + Lakebase + Databricks Apps | Model Serving, Lakebase, Apps |
 | **Others** | 11 | **Lakeflow Designer** | Visual pipeline authoring in Lakeflow Designer | Lakeflow, declarative pipelines |
