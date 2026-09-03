@@ -64,6 +64,7 @@ print(f"Held-out test set: {X_test.shape[0]} samples × {X_test.shape[1]} featur
 # DBTITLE 1,Section A - MLflow Tracking
 # MAGIC %md
 # MAGIC ## A. MLflow Experiment Tracking & Run Comparison
+# MAGIC > **Phase ① — dev / pre-deployment.** Runs against the registered `@dev` model **before** it reaches an endpoint. 
 # MAGIC
 # MAGIC MLflow automatically captures everything needed to reproduce and compare model training runs:
 # MAGIC - **Parameters** — hyperparameters, model type, training method
@@ -105,6 +106,7 @@ else:
 # DBTITLE 1,Section B - Explainability
 # MAGIC %md
 # MAGIC ## B. Feature Importance & Model Explainability
+# MAGIC > **Phase ① — dev / pre-deployment.** Runs against the registered `@dev` model **before** it reaches an endpoint. 
 # MAGIC
 # MAGIC **Why explainability matters:**
 # MAGIC - Regulatory compliance (model audit trails — especially in banking)
@@ -182,7 +184,7 @@ plt.show()
 # MAGIC %md
 # MAGIC ## C. Offline Quality Validation (Held-out Evaluation)
 # MAGIC
-# MAGIC > **Phase ① — dev / pre-deployment.** Runs against the registered `@dev` model **before** it reaches an endpoint. (Sections A & B above are also Phase ①.)
+# MAGIC > **Phase ① — dev / pre-deployment.** Runs against the registered `@dev` model **before** it reaches an endpoint. 
 # MAGIC
 # MAGIC Before deploying, validate model quality on a **held-out test split** — data the model
 # MAGIC did **not** train on — so the metrics are unbiased. We predict on `X_test` here on
@@ -279,21 +281,7 @@ print(f"Incorrect predictions: {(~eval_df['correct']).sum()}")
 # DBTITLE 1,Section D - Monitoring
 # MAGIC %md
 # MAGIC ## D. Lakehouse Monitoring of Live Predictions
-# MAGIC
-# MAGIC > **Phase ② — BAU / production.** This section monitors the **deployed endpoint's live
-# MAGIC > traffic**, so it needs `06` deployed with inference logging on. Until traffic exists,
-# MAGIC > D1/D2 print a message and skip — nothing here runs against the dev model.
-# MAGIC
-# MAGIC Databricks **Lakehouse Monitoring** provides automated drift detection and quality tracking:
-# MAGIC
-# MAGIC | Capability | What It Does |
-# MAGIC | --- | --- |
-# MAGIC | **Data drift detection** | Alerts when input feature distributions shift from the training baseline |
-# MAGIC | **Prediction drift** | Detects when the model's output distribution changes |
-# MAGIC | **Data quality** | Tracks nulls, schema changes, volume anomalies |
-# MAGIC | **Custom metrics** | Define business-specific quality metrics |
-# MAGIC
-# MAGIC ### How this section works
+# MAGIC > **Phase ② — BAU / production.** 
 # MAGIC
 # MAGIC Monitoring the live endpoint is a **three-step pipeline**:
 # MAGIC
@@ -305,18 +293,19 @@ print(f"Incorrect predictions: {(~eval_df['correct']).sum()}")
 # MAGIC 3. **D2** **enables monitoring** by creating a Lakehouse **InferenceLog monitor** on that
 # MAGIC    unpacked table — it produces drift/quality metric tables and a dashboard on a schedule.
 # MAGIC
-# MAGIC > **Why unpack first?** A monitor can't read the raw JSON payload log directly, and the
-# MAGIC > static `customer_churn_eval_log` (Section C) has no timestamp or model-id column — so it
-# MAGIC > could only be a **Snapshot** profile, not time-series **drift**. The unpacked table has
-# MAGIC > both columns an **InferenceLog** monitor needs.
+# MAGIC Databricks **Lakehouse Monitoring** provides automated drift detection and quality tracking:
+# MAGIC
+# MAGIC | Capability | What It Does |
+# MAGIC | --- | --- |
+# MAGIC | **Data drift detection** | Alerts when input feature distributions shift from the training baseline |
+# MAGIC | **Prediction drift** | Detects when the model's output distribution changes |
+# MAGIC | **Data quality** | Tracks nulls, schema changes, volume anomalies |
+# MAGIC | **Custom metrics** | Define business-specific quality metrics |
+# MAGIC
 
 # COMMAND ----------
 
 # DBTITLE 1,D1. Unpack Endpoint Payloads into a Monitorable Table
-# The serving endpoint (06) auto-captures each request/response into
-# `churn_endpoint_payload`, where `request`/`response` are JSON blobs. Lakehouse
-# Monitoring needs ONE ROW PER PREDICTION with real columns, so we unpack here:
-# each request record's features + its prediction + a timestamp + the model version.
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType, ArrayType, DoubleType
 
@@ -370,7 +359,7 @@ else:
 
 # DBTITLE 1,Enable the Monitor — Two Options
 # MAGIC %md
-# MAGIC ### Enable the monitor
+# MAGIC ### D2. Enable the monitor
 # MAGIC
 # MAGIC With the unpacked table ready (from **D1**), enable the monitor on it — there are **two
 # MAGIC equivalent ways**; pick either, they create the *same* monitor:
@@ -387,7 +376,7 @@ else:
 
 # COMMAND ----------
 
-# DBTITLE 1,D2. Create the Lakehouse InferenceLog Monitor
+# DBTITLE 1,Option 2 - By Script
 # Create a monitor ON THE UNPACKED TABLE (not the raw payload table). It computes
 # profile + drift metric tables and a dashboard on a schedule. `label_col` is
 # optional — once ground-truth churn is backfilled, quality metrics (F1/precision/
@@ -414,7 +403,9 @@ except Exception:
         ),
         assets_dir=f"/Workspace{DA.workshop_dir}/monitoring",
         output_schema_name=f"{DA.catalog_name}.{DA.schema_name}",
-        baseline_table_name=DA.feature_table_name,  # training features = drift baseline
+        # No baseline_table_name: drift is computed across time windows. A baseline is optional
+        # and, if set, must share the MONITORED table's schema — including the `prediction` and
+        # `model_version` columns — so the raw `customer_churn_features` table can't be used here.
         slicing_exprs=["tier_rank", "has_maturing_cd"],
     )
     print("Monitor created. It generates:")
