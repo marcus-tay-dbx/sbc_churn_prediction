@@ -53,12 +53,11 @@ churn class; `test_f1` (macro) is the number the Approve gate reads.
 
 Every notebook first runs Notebook `00-Setup`, which provides the shared config, imports, and the loaded data.
 
-> ⚠️ **Steps done in the UI** — the notebook cells alone won't complete these, so don't skip them if you Run All:
+> ⚠️ **Steps done in the UI** — these require manual creation in the UI, so don't skip them if you Run All:
 > - **Notebook 02** — Genie Code EDA in the Agent-mode panel
 > - **Notebook 03** — create the Lakebase synced (online) feature table
-> - **Notebook 06** — (optional) create the serving endpoint from the Serving UI
-> - **Notebook 07** — enable the Lakehouse monitor (table's Quality tab) and open its dashboard
-> - **Notebook 08** — approve the model in the deployment job's **Approve** task
+>
+> Notebooks 06, 07, and 08 also have UI equivalents (serving endpoint, Lakehouse monitor, model approval), but those are **supplemental** — the notebook scripts create them for you.
 
 ## Two workshop scenarios: with vs. without Lakebase
 
