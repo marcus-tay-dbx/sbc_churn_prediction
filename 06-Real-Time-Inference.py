@@ -52,6 +52,41 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Check Online Feature Store
+# This model was packaged with the Feature Engineering client, so it can look up features by
+# customer_id at serving time — but only if an ONLINE (synced) feature table exists. We check
+# for it here and fall back gracefully to the OFFLINE feature table if it's missing (no hard fail).
+synced_table_name = f"{DA.feature_table_name}_synced"
+online_store_available = spark.catalog.tableExists(synced_table_name)
+
+if online_store_available:
+    print(f"✅ Online feature store found: {synced_table_name}")
+    print(f"   Row count: {spark.table(synced_table_name).count():,}")
+    print("   The endpoint can look up features by customer_id (Option 1 in Section C).")
+else:
+    print(f"⚠️  Online feature store NOT found: {synced_table_name}")
+    print("   Deploying the endpoint against the OFFLINE feature table instead.")
+    print("   Real-time lookup by customer_id is unavailable — pass features directly (Option 2 in Section C).")
+    print("   To enable online lookup, create the synced table in Notebook 03 (Section D).")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC > ⚠️ **Online feature store fallback**
+# MAGIC >
+# MAGIC > This model was logged with the Feature Engineering client, so it can **automatically
+# MAGIC > look up features by `customer_id`** at query time — but only when an **online (synced)
+# MAGIC > feature table** exists.
+# MAGIC >
+# MAGIC > - **If the synced table exists** → the endpoint serves lookups by `customer_id` (**Option 1** in Section C).
+# MAGIC > - **If it does not** → the endpoint is still deployed against the **offline feature table**, but
+# MAGIC >   online lookup is unavailable. You must pass all feature values directly in the request
+# MAGIC >   (**Option 2** in Section C). Create the synced table in **Notebook 03 (Section D)** to enable online lookup.
+# MAGIC >
+# MAGIC > Either way the deployment below succeeds — the difference is only in *how* you query the endpoint.
+
+# COMMAND ----------
+
 # DBTITLE 1,Deploy Endpoint
 mlflow.set_registry_uri("databricks-uc")
 client = get_deploy_client("databricks")
