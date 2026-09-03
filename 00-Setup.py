@@ -16,17 +16,33 @@
 # ]
 # ///
 # DBTITLE 1,Install Dependencies
-# MAGIC
 # MAGIC %pip install databricks-feature-engineering --quiet
 
 # COMMAND ----------
 
-# DBTITLE 1,Shared Imports (used across notebooks 01-08)
+# DBTITLE 1,Step 1: Set Catalog and Schema
+# Derive catalog name from the current user's username (e.g. "first.last" → "first_last")
+username = spark.sql("SELECT current_user()").collect()[0][0]
+default_catalog = username.split("@")[0].replace(".", "_").replace("-", "_")
+
+# Configurable via notebook widgets — override these to point at a different catalog/schema
+dbutils.widgets.text("catalog_name", default_catalog, "Catalog Name")
+dbutils.widgets.text("schema_name", "sbc_churn_prediction", "Schema Name")
+catalog_name = dbutils.widgets.get("catalog_name")
+schema_name = dbutils.widgets.get("schema_name")
+
+spark.sql(f"USE CATALOG {catalog_name}")
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
+spark.sql(f"USE SCHEMA {schema_name}")
+
+print(f"✓ Catalog: {catalog_name}")
+print(f"✓ Schema:  {schema_name}")
+
+# COMMAND ----------
+
+# DBTITLE 1,Step 2: Shared Imports (used across notebooks 01-08)
 # Single import block for the whole workshop. Every notebook runs `%run "./00-Setup"`,
 # so these names are available downstream — no per-notebook import cells needed.
-# All third-party libraries (feature-engineering, xgboost, shap, seaborn) are provided
-# by the serverless environment declared in each notebook's `# /// script` header, so
-# there are no %pip installs anywhere in the workshop.
 import os, re, json, pickle, warnings, logging
 import numpy as np
 import pandas as pd
@@ -66,17 +82,6 @@ logging.getLogger("tensorflow").setLevel(logging.ERROR)
 notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
 workshop_dir = os.path.dirname(notebook_path)
 course_dir = os.path.dirname(workshop_dir)
-
-username = spark.sql("SELECT current_user()").collect()[0][0]
-# Shared workshop schema — configurable via notebook widgets.
-dbutils.widgets.text("catalog_name", "solution_builder", "Catalog Name")
-dbutils.widgets.text("schema_name", "sbc_churn_prediction", "Schema Name")
-catalog_name = dbutils.widgets.get("catalog_name")
-schema_name = dbutils.widgets.get("schema_name")
-
-spark.sql(f"USE CATALOG {catalog_name}")
-spark.sql(f"CREATE SCHEMA IF NOT EXISTS {schema_name}")
-spark.sql(f"USE SCHEMA {schema_name}")
 
 table_name = "customer_churn"
 raw_root = f"/Volumes/{catalog_name}/{schema_name}/raw_data"
