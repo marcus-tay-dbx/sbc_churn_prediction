@@ -214,8 +214,8 @@ except Exception as e:
 # MAGIC
 # MAGIC In this notebook, we:
 # MAGIC - Selected feature variables and **excluded leakage columns**
-# MAGIC - Engineered a new categorical feature **`balanceCategory`** with business logic
+# MAGIC - Engineered a new categorical feature `balanceCategory` with business logic
 # MAGIC - Published a **Feature Store** table in Unity Catalog (tagged for cleanup)
 # MAGIC - Previewed a **synced table (Lakebase)** for low-latency online serving
 # MAGIC
-# MAGIC Next: Proceed to **04-Model-Training** to train a model using `FeatureLookup`.
+# MAGIC Next: Proceed to `04-Model-Training` to train a model using `FeatureLookup`.

@@ -65,34 +65,36 @@
 # MAGIC   <div style="background: #F9F7F4; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">Model Serving endpoints, REST API queries, Serving UI</div>
 # MAGIC
 # MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;"><strong>07</strong></div>
-# MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">Observability</div>
+# MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">Observability &amp; Continuous Retrain</div>
 # MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">MLflow tracking, feature importance, SHAP, confusion matrix, Lakehouse Monitoring</div>
 # MAGIC
 # MAGIC   <div style="background: #F9F7F4; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;"><strong>08</strong></div>
-# MAGIC   <div style="background: #F9F7F4; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">MLflow (Deployment Jobs)</div>
+# MAGIC   <div style="background: #F9F7F4; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">Continuous Deployment</div>
 # MAGIC   <div style="background: #F9F7F4; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">Deployment job creation, model-to-job linking, Evaluate → Approve → Deploy pipeline</div>
 # MAGIC
 # MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF; border-radius: 0 0 0 8px;"><strong>09</strong></div>
-# MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">Migration</div>
-# MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF; border-radius: 0 0 8px 0;">TBC</div>
+# MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF;">Compute Resource Selection</div>
+# MAGIC   <div style="background: #FFFFFF; padding: 10px 12px; border-bottom: 1px solid #E5E3DF; border-radius: 0 0 8px 0;">Recommended compute per workload: interactive, batch/scheduled, feature store, online store, serving</div>
 # MAGIC
 # MAGIC </div>
 
 # COMMAND ----------
 
 # DBTITLE 1,Run Classroom Setup
+# MAGIC
 # MAGIC %run "./00-Setup"
 
 # COMMAND ----------
 
 # DBTITLE 1,Notebook Exploration
+# MAGIC
 # MAGIC %md
 # MAGIC ## A. Notebook Exploration
-# MAGIC
 
 # COMMAND ----------
 
 # DBTITLE 1,Notebook UI Features
+# MAGIC
 # MAGIC %md
 # MAGIC ### Databricks Notebook UI Features
 # MAGIC
@@ -117,12 +119,14 @@
 # COMMAND ----------
 
 # DBTITLE 1,Load the Dataset
+
 df = spark.table("customer_churn")
 display(df)
 
 # COMMAND ----------
 
 # DBTITLE 1,Multi-Language Demo - SQL
+# MAGIC
 # MAGIC %sql
 # MAGIC
 # MAGIC SELECT tier,
@@ -137,15 +141,16 @@ display(df)
 # COMMAND ----------
 
 # DBTITLE 1,Introduction to Genie Code
+# MAGIC
 # MAGIC %md
 # MAGIC ## B. Introduction to Genie Code
 # MAGIC
 # MAGIC In this section, we introduce **Databricks Genie Code** — a conversational AI agent that helps you build data science workflows through natural language prompts.
-# MAGIC
 
 # COMMAND ----------
 
 # DBTITLE 1,What is Genie Code
+# MAGIC
 # MAGIC %md
 # MAGIC ### What is Genie Code?
 # MAGIC
@@ -163,53 +168,12 @@ display(df)
 
 # COMMAND ----------
 
-# DBTITLE 1,Understanding Genie Code Agent Mode
-# MAGIC %md
-# MAGIC ### Understanding Databricks Genie Code
-# MAGIC
-# MAGIC Databricks Genie Code is an AI-powered assistant embedded into the Databricks workspace. It can help you write code, understand data, debug errors, and explain results.
-# MAGIC
-# MAGIC **Agent Mode** is a specialized feature that enables the Assistant to perform multi-step data science tasks such as:
-# MAGIC
-# MAGIC - Understanding the dataset and generating an approach
-# MAGIC - Building features for ML workflows
-# MAGIC - Training one or more models
-# MAGIC - Evaluating models using common metrics
-# MAGIC - Logging runs and artifacts to **MLflow**
-# MAGIC - Helping identify a baseline "champion" model
-# MAGIC
-# MAGIC Agent Mode is especially useful when you want an AutoML-like experience, but with:
-# MAGIC
-# MAGIC - **More control** over the workflow
-# MAGIC - **More transparency** into the generated code
-# MAGIC - The ability to customize the workflow using natural language
-
-# COMMAND ----------
-
-# DBTITLE 1,How to Access Agent Mode
-# MAGIC %md
-# MAGIC ### How to Access Agent Mode
-# MAGIC
-# MAGIC To use Agent Mode in Databricks:
-# MAGIC
-# MAGIC 1. Open the **Genie Code** panel on the right side of the notebook.
-# MAGIC
-# MAGIC 2. Select the **Agent** option in the Genie Code mode drop-down.
-# MAGIC
-# MAGIC 3. Use prompts like:
-# MAGIC    - "Analyze the customer_churn dataset and suggest features"
-# MAGIC    - "Train baseline classification models and log to MLflow"
-# MAGIC    - "Pick the best run based on F1-score"
-# MAGIC
-# MAGIC **Genie Code** generates executable code directly in the notebook context, which you can run, inspect, and modify.
-
-# COMMAND ----------
-
 # DBTITLE 1,Best Practices for Agent Mode Prompts
-# MAGIC %md
-# MAGIC ### Best Practices for Agent Mode Prompts
 # MAGIC
-# MAGIC To get reliable and repeatable results from Agent Mode, write prompts that clearly specify:
+# MAGIC %md
+# MAGIC ### Best Practices for  Prompts
+# MAGIC
+# MAGIC To get reliable and repeatable results, write prompts that clearly specify:
 # MAGIC
 # MAGIC - **Dataset name**
 # MAGIC - **Target column**
@@ -227,6 +191,7 @@ display(df)
 # COMMAND ----------
 
 # DBTITLE 1,Important Considerations
+# MAGIC
 # MAGIC %md-sandbox
 # MAGIC ### Important Considerations
 # MAGIC
@@ -257,6 +222,7 @@ display(df)
 # COMMAND ----------
 
 # DBTITLE 1,Know Your Data (EDA)
+# MAGIC
 # MAGIC %md
 # MAGIC ## C. Know Your Data (EDA)
 # MAGIC
@@ -276,6 +242,7 @@ display(df)
 # COMMAND ----------
 
 # DBTITLE 1,Genie Code Prompt
+# MAGIC
 # MAGIC %md-sandbox
 # MAGIC <div style="border-left: 4px solid #f44336; background: #ffebee; padding: 16px 20px; border-radius: 4px; margin: 16px 0;">
 # MAGIC <div style="display: flex; align-items: flex-start; gap: 12px;">
@@ -309,29 +276,27 @@ display(df)
 
 # COMMAND ----------
 
-# DBTITLE 1,Read customer_churn into Spark DataFrame
-df = spark.table("customer_churn")
-display(df)
-
-# COMMAND ----------
-
 # DBTITLE 1,Convert to pandas DataFrame
+
 pdf = df.toPandas()
 pdf.head()
 
 # COMMAND ----------
 
 # DBTITLE 1,Summary statistics for Spark DataFrame
+
 display(df.summary())
 
 # COMMAND ----------
 
 # DBTITLE 1,Summary statistics for pandas DataFrame
+
 print(pdf.describe())
 
 # COMMAND ----------
 
 # DBTITLE 1,Balance statistics grouped by tier
+
 balance_stats = df.groupBy("tier").agg(
     F.min("total_balance_usd").alias("min_balance"),
     F.percentile_approx("total_balance_usd", 0.25).alias("Q1_balance"),
@@ -345,6 +310,7 @@ display(balance_stats)
 # COMMAND ----------
 
 # DBTITLE 1,Bubble Chart Instructions
+# MAGIC
 # MAGIC %md
 # MAGIC ### Bubble Chart Using GUI Visualization Editor
 # MAGIC
@@ -373,6 +339,7 @@ display(balance_stats)
 # COMMAND ----------
 
 # DBTITLE 1,Genie Code Prompt 2
+# MAGIC
 # MAGIC %md-sandbox
 # MAGIC <div id="prompt-box" style="border-left: 4px solid #1976d2; background: #e3f2fd; padding: 16px 20px; border-radius: 4px; margin: 16px 0; position: relative;">
 # MAGIC
@@ -388,11 +355,11 @@ display(balance_stats)
 # MAGIC
 # MAGIC </div>
 # MAGIC
-# MAGIC
 
 # COMMAND ----------
 
 # DBTITLE 1,Churn rate and count by tier
+
 tier_stats = df.groupBy("tier").agg(
     F.round(F.avg("churned"), 3).alias("churn_rate"),
     F.count("*").alias("customers")
@@ -403,6 +370,7 @@ display(tier_stats)
 # COMMAND ----------
 
 # DBTITLE 1,Conclusion
+# MAGIC
 # MAGIC %md
 # MAGIC ## D. Conclusion
 # MAGIC
@@ -412,4 +380,4 @@ display(tier_stats)
 # MAGIC - **Built-in visualization editor** for interactive charts
 # MAGIC - **SQL and Python** in the same notebook for flexible exploration
 # MAGIC
-# MAGIC Next: Proceed to **02-EDA-with-Genie-Code** to explore the data using Genie Code.
+# MAGIC Next: Proceed to `02-EDA-with-Genie-Code` to explore the data using Genie Code.
