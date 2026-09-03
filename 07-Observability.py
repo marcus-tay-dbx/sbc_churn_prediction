@@ -293,19 +293,22 @@ print(f"Incorrect predictions: {(~eval_df['correct']).sum()}")
 # MAGIC | **Data quality** | Tracks nulls, schema changes, volume anomalies |
 # MAGIC | **Custom metrics** | Define business-specific quality metrics |
 # MAGIC
-# MAGIC You enable the monitor on the **unpacked** table (`customer_churn_inference_unpacked` from **D1** — *not* the raw `churn_endpoint_payload`, and not the static `customer_churn_eval_log`). There are **two equivalent ways** — pick either; they create the *same* monitor:
+# MAGIC ### How this section works
 # MAGIC
-# MAGIC **Option 1 — UI**
-# MAGIC 1. **Catalog** → select `customer_churn_inference_unpacked`
-# MAGIC 2. **Quality** tab → **Create monitor** → **Inference profile**
-# MAGIC 3. **Problem type** = Classification, **Prediction column** = `prediction`, **Timestamp column** = `inference_timestamp`, **Model ID column** = `model_version`
-# MAGIC 4. **Baseline table** = `customer_churn_features`, set a **refresh schedule** (e.g., daily) → **Create**
+# MAGIC Monitoring the live endpoint is a **three-step pipeline**:
 # MAGIC
-# MAGIC **Option 2 — Script**: run cells **D1** (unpack payloads) then **D2** (`w.quality_monitors.create(...)`) below.
+# MAGIC 1. **Notebook `06`** turned on inference logging, so the endpoint auto-captures every
+# MAGIC    request/response into the **payload log** `churn_endpoint_payload` (raw JSON blobs).
+# MAGIC 2. **D1** (below) **unpacks** that payload log into a monitorable table
+# MAGIC    `customer_churn_inference_unpacked` — one row per prediction, with real feature columns,
+# MAGIC    the `prediction`, an `inference_timestamp`, and a `model_version`.
+# MAGIC 3. **D2** **enables monitoring** by creating a Lakehouse **InferenceLog monitor** on that
+# MAGIC    unpacked table — it produces drift/quality metric tables and a dashboard on a schedule.
 # MAGIC
-# MAGIC Either way you get a **dashboard** plus **metrics tables** (`..._profile_metrics`, `..._drift_metrics`) you can query.
-# MAGIC
-# MAGIC > An **InferenceLog** monitor needs a **timestamp** (and ideally a **model-id**) column — the unpacked table has both. The static `customer_churn_eval_log` (from Section C) has neither, so it could only be a **Snapshot** profile (point-in-time data quality), not time-series drift.
+# MAGIC > **Why unpack first?** A monitor can't read the raw JSON payload log directly, and the
+# MAGIC > static `customer_churn_eval_log` (Section C) has no timestamp or model-id column — so it
+# MAGIC > could only be a **Snapshot** profile, not time-series **drift**. The unpacked table has
+# MAGIC > both columns an **InferenceLog** monitor needs.
 
 # COMMAND ----------
 
@@ -362,6 +365,25 @@ else:
         spark.sql(f"ALTER TABLE {unpacked_table} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)")
         print(f"Unpacked {spark.table(unpacked_table).count()} predictions → {unpacked_table}")
         display(spark.table(unpacked_table).limit(10))
+
+# COMMAND ----------
+
+# DBTITLE 1,Enable the Monitor — Two Options
+# MAGIC %md
+# MAGIC ### Enable the monitor
+# MAGIC
+# MAGIC With the unpacked table ready (from **D1**), enable the monitor on it — there are **two
+# MAGIC equivalent ways**; pick either, they create the *same* monitor:
+# MAGIC
+# MAGIC **Option 1 — UI**
+# MAGIC 1. **Catalog** → select `customer_churn_inference_unpacked`
+# MAGIC 2. **Quality** tab → **Create monitor** → **Inference profile**
+# MAGIC 3. **Problem type** = Classification, **Prediction column** = `prediction`, **Timestamp column** = `inference_timestamp`, **Model ID column** = `model_version`
+# MAGIC 4. **Baseline table** = `customer_churn_features`, set a **refresh schedule** (e.g., daily) → **Create**
+# MAGIC
+# MAGIC **Option 2 — Script**: run cell **D2** below (`w.quality_monitors.create(...)`).
+# MAGIC
+# MAGIC Either way you get a **dashboard** plus **metrics tables** (`..._profile_metrics`, `..._drift_metrics`) you can query.
 
 # COMMAND ----------
 
