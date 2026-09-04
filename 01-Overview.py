@@ -128,7 +128,6 @@ display(df)
 # DBTITLE 1,Multi-Language Demo - SQL
 # MAGIC
 # MAGIC %sql
-# MAGIC
 # MAGIC SELECT tier,
 # MAGIC        COUNT(*) as customers,
 # MAGIC        ROUND(AVG(churned), 3) as churn_rate,
@@ -264,7 +263,7 @@ display(df)
 # MAGIC
 # MAGIC <div id="prompt-body-1">
 # MAGIC
-# MAGIC Using the `customer_churn` table in the current catalog and schema, generate 5 code cells placed as follows:
+# MAGIC Using the `customer_churn` table in the current catalog and schema, generate 4 code cells placed as follows:
 # MAGIC
 # MAGIC 1. After the markdown cell titled **"Genie Code Prompt"**: Read `customer_churn` into a Spark DataFrame called `df` and a pandas DataFrame called `pdf`; Then display `df`.
 # MAGIC 2. Display summary statistics for `df`.
@@ -273,39 +272,6 @@ display(df)
 # MAGIC
 # MAGIC
 # MAGIC </div>
-
-# COMMAND ----------
-
-# DBTITLE 1,Convert to pandas DataFrame
-
-pdf = df.toPandas()
-pdf.head()
-
-# COMMAND ----------
-
-# DBTITLE 1,Summary statistics for Spark DataFrame
-
-display(df.summary())
-
-# COMMAND ----------
-
-# DBTITLE 1,Summary statistics for pandas DataFrame
-
-print(pdf.describe())
-
-# COMMAND ----------
-
-# DBTITLE 1,Balance statistics grouped by tier
-
-balance_stats = df.groupBy("tier").agg(
-    F.min("total_balance_usd").alias("min_balance"),
-    F.percentile_approx("total_balance_usd", 0.25).alias("Q1_balance"),
-    F.percentile_approx("total_balance_usd", 0.5).alias("median_balance"),
-    F.percentile_approx("total_balance_usd", 0.75).alias("Q3_balance"),
-    F.max("total_balance_usd").alias("max_balance")
-).orderBy("tier")
-
-display(balance_stats)
 
 # COMMAND ----------
 
