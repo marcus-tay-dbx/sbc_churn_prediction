@@ -30,13 +30,13 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Install Dependencies
-# MAGIC %pip install xgboost --quiet
+# DBTITLE 1,Setup
+# MAGIC %run "./00-Setup"
 
 # COMMAND ----------
 
-# DBTITLE 1,Setup
-# MAGIC %run "./00-Setup"
+# DBTITLE 1,Install Dependencies
+# MAGIC %pip install xgboost --quiet
 
 # COMMAND ----------
 

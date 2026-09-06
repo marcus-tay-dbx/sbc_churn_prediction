@@ -634,7 +634,7 @@ os.makedirs(experiments_dir, exist_ok=True)
 
 model_name = f"{catalog_name}.{schema_name}.customer_churn_model"
 model_name_no_fs = f"{catalog_name}.{schema_name}.customer_churn_model_no_feature_store"  # takes features directly; serves without an online store
-feature_table_name = f"{catalog_name}.{schema_name}.customer_churn_features"
+feature_table_name = f"{catalog_name}.{schema_name}.customer_churn_feature"
 base_table_name = f"{catalog_name}.{schema_name}.customer_churn"
 experiment_path = f"/Workspace{workshop_dir}/experiments/bank-churn-training"
 model_uri = f"models:/{model_name}@dev"

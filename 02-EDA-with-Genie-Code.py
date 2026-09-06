@@ -26,7 +26,7 @@
 # COMMAND ----------
 
 # DBTITLE 1,Setup
-# MAGIC %run "./00-Setup"
+# MAGIC %run "./00-Setup" 
 
 # COMMAND ----------
 
