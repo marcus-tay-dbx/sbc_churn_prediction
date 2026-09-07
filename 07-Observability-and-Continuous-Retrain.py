@@ -317,46 +317,71 @@ unpacked_table = f"{DA.catalog_name}.{DA.schema_name}.customer_churn_inference_u
 
 if not spark.catalog.tableExists(payload_table):
     print(f"No payload table yet at {payload_table}.")
-    print("Create the endpoint (06) and send it some traffic, then re-run this cell.")
+    print("Run 99-Load-Test-Endpoint to generate traffic, then re-run this cell.")
 else:
     raw = spark.table(payload_table)
-    if raw.limit(1).count() == 0:
-        print(f"{payload_table} exists but is empty — send requests to the endpoint first.")
+    raw_count = raw.count()
+    print(f"Payload table has {raw_count:,} rows.")
+    if raw_count == 0:
+        print(f"{payload_table} exists but is empty — run 99-Load-Test-Endpoint first.")
     else:
+        # Detect timestamp column: AI Gateway uses `request_time` (timestamp type);
+        # legacy auto_capture_config used `timestamp_ms` (epoch millis bigint).
+        raw_cols = [f.name for f in raw.schema.fields]
+        if "request_time" in raw_cols:
+            ts_col = F.col("request_time")
+        elif "timestamp_ms" in raw_cols:
+            ts_col = (F.col("timestamp_ms") / 1000).cast("timestamp")
+        else:
+            ts_col = F.current_timestamp()
+            print("⚠️  No timestamp column found — using current_timestamp() as inference_timestamp.")
+
         # request  = {"dataframe_records": [ {feature: value, ...}, ... ]}
-        # response = {"predictions": [ pred, ... ]}
+        # response = {"predictions": [ pred, ... ]} (values may be int or double)
         feat_fields = [StructField(c, DoubleType(), True) for c in DA.feature_columns] + \
                       [StructField("customer_id", StringType(), True)]
         req_schema = StructType([StructField("dataframe_records", ArrayType(StructType(feat_fields)), True)])
         resp_schema = StructType([StructField("predictions", ArrayType(DoubleType()), True)])
 
+        # Only include HTTP 200 rows where both request and response parse cleanly.
         unpacked = (
             raw
-            .withColumn("_req", F.from_json("request", req_schema))
-            .withColumn("_resp", F.from_json("response", resp_schema))
-            .withColumn("_recs", F.col("_req.dataframe_records"))
+            .filter(F.col("status_code") == 200)
+            .withColumn("_req",   F.from_json("request",  req_schema))
+            .withColumn("_resp",  F.from_json("response", resp_schema))
+            .withColumn("_recs",  F.col("_req.dataframe_records"))
             .withColumn("_preds", F.col("_resp.predictions"))
-            # zip each request record with its prediction, then explode to one row each
+            .filter(F.col("_recs").isNotNull() & F.col("_preds").isNotNull())
+            .filter(F.size("_recs") > 0)
+            # Zip each request record with its prediction, then explode to one row each.
             .withColumn("_pair", F.explode(F.arrays_zip("_recs", "_preds")))
-            # AI Gateway inference tables carry a `request_time` timestamp column directly
-            # (the legacy auto_capture_config used epoch `timestamp_ms` instead).
-            .withColumn("inference_timestamp", F.col("request_time"))
-            .withColumn("model_version", F.lit("served"))  # set from request_metadata if captured
+            .withColumn("inference_timestamp", ts_col)
+            .withColumn("model_version", F.lit("served"))
             .select(
                 F.col("databricks_request_id").alias("request_id"),
                 "inference_timestamp",
                 "model_version",
-                F.col("_pair._recs.customer_id").alias("customer_id"),
+                F.coalesce(
+                    F.col("_pair._recs.customer_id"), F.lit("unknown")
+                ).alias("customer_id"),
                 *[F.col(f"_pair._recs.{c}").alias(c) for c in DA.feature_columns],
-                F.col("_pair._preds").alias("prediction"),
+                F.col("_pair._preds").cast(DoubleType()).alias("prediction"),
             )
+            # Drop customer_id-only requests (feature-lookup payloads have no feature columns).
+            .filter(F.col(DA.feature_columns[0]).isNotNull())
         )
-        unpacked.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(unpacked_table)
-        tag_table(unpacked_table)
-        # Change Data Feed is required by Lakehouse Monitoring.
-        spark.sql(f"ALTER TABLE {unpacked_table} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)")
-        print(f"Unpacked {spark.table(unpacked_table).count()} predictions → {unpacked_table}")
-        display(spark.table(unpacked_table).limit(10))
+        row_count = unpacked.count()
+        if row_count == 0:
+            print("⚠️  All payload rows had null feature values (requests used customer_id lookup only).")
+            print("   Re-run 99-Load-Test-Endpoint — it sends feature values in every payload so")
+            print("   the monitor can extract them for drift detection.")
+        else:
+            unpacked.write.mode("overwrite").option("mergeSchema", "true").saveAsTable(unpacked_table)
+            tag_table(unpacked_table)
+            # Change Data Feed is required by Lakehouse Monitoring.
+            spark.sql(f"ALTER TABLE {unpacked_table} SET TBLPROPERTIES (delta.enableChangeDataFeed = true)")
+            print(f"Unpacked {spark.table(unpacked_table).count():,} predictions → {unpacked_table}")
+            display(spark.table(unpacked_table).limit(10))
 
 # COMMAND ----------
 
@@ -525,7 +550,9 @@ else:
                 task_key="drift_gate",
                 notebook_task=NotebookTask(
                     notebook_path=gate_notebook, source=Source("WORKSPACE"),
-                    base_parameters={"drift_threshold": "0.2", "force_retrain": "false"},
+                    # Demo defaults: force_retrain=true ensures the job always retrains.
+                # Change to force_retrain=false + drift_threshold=0.2 for production.
+                base_parameters={"drift_threshold": "0.0", "force_retrain": "true"},
                 ),
             ),
             Task(

@@ -35,31 +35,43 @@
 
 # DBTITLE 1,Drift Gate → task value
 # Decide whether prediction drift in the latest window exceeds the threshold.
-dbutils.widgets.text("drift_threshold", "0.2", "Drift threshold (JS distance)")
-dbutils.widgets.dropdown("force_retrain", "false", ["true", "false"], "Force retrain (ignore gate)")
+#
+# ⚡ DEMO TIP: Both defaults below are set for maximum demo reliability:
+#   - drift_threshold = 0.0  → any non-null JS distance (≥ 0.0) trips the gate
+#   - force_retrain   = true → bypasses the gate entirely; always retrains
+# Set force_retrain = false and raise drift_threshold (e.g. 0.2) for production.
+dbutils.widgets.text("drift_threshold", "0.0", "Drift threshold (JS distance)")
+dbutils.widgets.dropdown("force_retrain", "true", ["true", "false"], "Force retrain (ignore gate)")
 
-drift_threshold = float(dbutils.widgets.get("drift_threshold") or "0.2")
+drift_threshold = float(dbutils.widgets.get("drift_threshold") or "0.0")
 force_retrain = dbutils.widgets.get("force_retrain").lower() == "true"
 drift_table = f"{DA.catalog_name}.{DA.schema_name}.customer_churn_inference_unpacked_drift_metrics"
 
 retrain_needed = False
 reason = ""
 if force_retrain:
-    retrain_needed, reason = True, "force_retrain=true"
+    retrain_needed, reason = True, "force_retrain=true (demo mode — bypasses drift gate)"
 elif not spark.catalog.tableExists(drift_table):
-    reason = f"No drift-metrics table yet ({drift_table}). Set up + refresh the monitor (Section D) first."
+    reason = (f"No drift-metrics table yet ({drift_table}). Set up + refresh the monitor (Section D) "
+              f"and run 99-Load-Test-Endpoint first.")
 else:
-    latest = (
-        spark.table(drift_table)
-        .filter((F.col("column_name") == "prediction") & (F.col("drift_type") == "CONSECUTIVE"))
-        .orderBy(F.col("window.start").desc()).limit(1).collect()
-    )
-    if not latest:
-        reason = "No CONSECUTIVE prediction-drift row yet (needs >=2 refreshed windows)."
+    # Try drift types in order of preference: CONSECUTIVE needs ≥2 windows;
+    # fall back to BASELINE (available after the first monitor refresh).
+    for drift_type in ("CONSECUTIVE", "BASELINE", "SEQUENTIAL"):
+        rows = (
+            spark.table(drift_table)
+            .filter((F.col("column_name") == "prediction") & (F.col("drift_type") == drift_type))
+            .orderBy(F.col("window.start").desc()).limit(1).collect()
+        )
+        if rows:
+            js = rows[0]["js_distance"]
+            retrain_needed = js is not None and js >= drift_threshold
+            reason = (f"prediction JS distance = {js:.4f} (type={drift_type}, "
+                      f"threshold={drift_threshold}) → {'TRIP ✅' if retrain_needed else 'within threshold'}")
+            break
     else:
-        js = latest[0]["js_distance"]
-        retrain_needed = js is not None and js >= drift_threshold
-        reason = f"prediction JS distance = {js} (threshold {drift_threshold})"
+        reason = ("Drift-metrics table has no prediction rows yet. "
+                  "Refresh the monitor after running 99-Load-Test-Endpoint.")
 
 print(f"retrain_needed = {retrain_needed} | {reason}")
 
